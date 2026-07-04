@@ -581,6 +581,14 @@ function animate() {
   );
   scene.fog.color.copy(fogColor);
 
+  // 进度条彩色渐变（跟随情绪色相）
+  const progFill = $('progress-fill');
+  if (progFill) {
+    const h = Math.round(mood.currentHue);
+    progFill.style.background = `linear-gradient(90deg, hsl(${(h - 40 + 360) % 360}, 75%, 55%), hsl(${h}, 80%, 62%), hsl(${(h + 40) % 360}, 75%, 55%))`;
+    progFill.style.boxShadow = `0 0 12px hsla(${h}, 80%, 60%, 0.6)`;
+  }
+
   // 歌曲球体 — 颜色随情绪混合
   songOrbs.forEach((orb, i) => {
     const ud = orb.userData;
@@ -675,6 +683,12 @@ function animate() {
 
 // ============ 事件绑定 ============
 function bindEvents() {
+  // 开场页进入
+  $('welcome-enter').addEventListener('click', () => {
+    $('welcome').classList.add('fade-out');
+    setTimeout(() => $('drop-zone').classList.remove('hidden'), 800);
+  });
+
   $('btn-play').addEventListener('click', togglePlay);
   $('btn-prev').addEventListener('click', playPrev);
   $('btn-next').addEventListener('click', playNext);

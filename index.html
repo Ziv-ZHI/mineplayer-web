@@ -9,11 +9,17 @@
 <body>
   <canvas id="canvas"></canvas>
 
-  <!-- 顶部 -->
-  <div id="top-bar">
-    <span class="logo">知非的音乐厅</span>
-    <button id="btn-theme" title="主题">&#9790;</button>
+  <!-- 开场页 -->
+  <div id="welcome">
+    <div id="welcome-content">
+      <div id="welcome-title">知非的音乐厅</div>
+      <div id="welcome-subtitle">沉浸式 3D 音乐可视化</div>
+      <button id="welcome-enter">进 入</button>
+    </div>
   </div>
+
+  <!-- 主题按钮（右上角，极简） -->
+  <button id="btn-theme" title="主题">&#9790;</button>
 
   <!-- 当前播放浮层 -->
   <div id="now-playing" class="hidden">
@@ -33,7 +39,7 @@
   </div>
 
   <!-- 拖拽入口 -->
-  <div id="drop-zone">
+  <div id="drop-zone" class="hidden">
     <div id="drop-inner">
       <div id="drop-icon">&#9835;</div>
       <p>拖拽音频文件到此处</p>

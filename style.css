@@ -36,40 +36,93 @@ canvas#canvas {
 }
 canvas#canvas:active { cursor: grabbing; }
 
-/* ===== 顶部 ===== */
-#top-bar {
+/* ===== 开场页 ===== */
+#welcome {
   position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 10;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  padding: 16px 24px;
+  background: radial-gradient(ellipse at center, rgba(8,12,20,0.92) 0%, rgba(4,6,10,0.99) 70%);
+  backdrop-filter: blur(6px);
+  transition: opacity 1.2s ease, visibility 1.2s ease;
+}
+#welcome.fade-out {
+  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
-.logo {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 4px;
-  text-shadow: 0 0 20px rgba(88,166,255,0.3);
+#welcome-content {
+  text-align: center;
+  animation: welcomeIn 1.5s ease-out;
 }
+@keyframes welcomeIn {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+#welcome-title {
+  font-size: 52px;
+  font-weight: 200;
+  letter-spacing: 16px;
+  color: rgba(230, 237, 243, 0.95);
+  text-shadow: 0 0 40px rgba(88, 166, 255, 0.25), 0 0 100px rgba(88, 166, 255, 0.12);
+  margin-bottom: 12px;
+  animation: titleGlow 5s ease-in-out infinite;
+}
+@keyframes titleGlow {
+  0%, 100% { text-shadow: 0 0 40px rgba(88,166,255,0.25), 0 0 100px rgba(88,166,255,0.10); }
+  50% { text-shadow: 0 0 60px rgba(88,166,255,0.40), 0 0 140px rgba(88,166,255,0.18); }
+}
+#welcome-subtitle {
+  font-size: 12px;
+  letter-spacing: 8px;
+  color: rgba(139, 148, 158, 0.7);
+  margin-bottom: 56px;
+}
+#welcome-enter {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(230, 237, 243, 0.9);
+  padding: 14px 56px;
+  font-size: 13px;
+  letter-spacing: 6px;
+  cursor: pointer;
+  border-radius: 28px;
+  transition: all 0.5s;
+  backdrop-filter: blur(8px);
+}
+#welcome-enter:hover {
+  border-color: rgba(88, 166, 255, 0.4);
+  background: rgba(88, 166, 255, 0.08);
+  box-shadow: 0 0 40px rgba(88, 166, 255, 0.15);
+  letter-spacing: 8px;
+}
+
+/* ===== 主题按钮（右上角极简） ===== */
 #btn-theme {
-  pointer-events: auto;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
   background: var(--glass);
   backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   color: var(--text);
-  font-size: 14px;
-  width: 32px; height: 32px;
+  font-size: 13px;
+  width: 30px; height: 30px;
   border-radius: 50%;
   cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.3s;
 }
+#btn-theme:hover { opacity: 1; }
 
 /* ===== 当前播放 ===== */
 #now-playing {
   position: fixed;
-  top: 56px;
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -144,20 +197,22 @@ body.light #mini-controls button:hover { background: rgba(0,0,0,0.06); }
   width: 42px !important; height: 42px !important;
 }
 #btn-play:hover { opacity: 0.85; }
+
+/* ===== 彩色进度条 ===== */
 #progress-track {
-  width: 120px;
-  height: 3px;
-  background: rgba(255,255,255,0.15);
+  width: 180px;
+  height: 4px;
+  background: rgba(255,255,255,0.10);
   border-radius: 2px;
   cursor: pointer;
+  overflow: hidden;
 }
-body.light #progress-track { background: rgba(0,0,0,0.1); }
+body.light #progress-track { background: rgba(0,0,0,0.08); }
 #progress-fill {
   height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
   width: 0%;
-  transition: width 0.1s linear;
+  border-radius: 2px;
+  transition: width 0.1s linear, box-shadow 0.3s, background 0.5s;
 }
 
 /* ===== 拖拽区 ===== */
@@ -167,7 +222,7 @@ body.light #progress-track { background: rgba(0,0,0,0.1); }
   transform: translate(-50%, -50%);
   z-index: 5;
   text-align: center;
-  transition: opacity 0.4s;
+  transition: opacity 0.6s;
 }
 #drop-zone.hidden { opacity: 0; pointer-events: none; }
 #drop-inner {
@@ -179,22 +234,29 @@ body.light #progress-track { background: rgba(0,0,0,0.1); }
 #drop-icon {
   font-size: 48px;
   color: var(--text2);
-  opacity: 0.4;
+  opacity: 0.35;
   animation: float 3s ease-in-out infinite;
 }
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 }
-#drop-inner p { font-size: 14px; color: var(--text2); }
+#drop-inner p { font-size: 13px; color: var(--text2); letter-spacing: 2px; }
 #btn-load {
   display: inline-block;
-  padding: 8px 24px;
-  background: var(--accent);
-  color: #fff;
+  padding: 8px 28px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
   border-radius: 20px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  transition: all 0.3s;
+}
+#btn-load:hover {
+  background: rgba(88,166,255,0.1);
+  border-color: rgba(88,166,255,0.3);
 }
 #file-input { display: none; }
 
@@ -212,7 +274,7 @@ body.light #progress-track { background: rgba(0,0,0,0.1); }
   border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 4px 14px;
-  opacity: 0.7;
+  opacity: 0.6;
   pointer-events: none;
   transition: opacity 0.4s;
 }

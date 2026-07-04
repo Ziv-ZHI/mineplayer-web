@@ -91,7 +91,7 @@ const camCtrl = {
   azimuth: 0,
   polar: Math.PI / 2,
   distance: 300,
-  targetAz: 0,
+  targetAzimuth: 0,
   targetPolar: Math.PI / 2,
   targetDist: 300,
   isDragging: false,
@@ -429,14 +429,16 @@ function onCanvasClick(e) {
 
 // ============ 音频 ============
 function initAudioAnalyser() {
-  if (state.audioCtx) state.audioCtx.close();
-  state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  state.analyser = state.audioCtx.createAnalyser();
-  state.analyser.fftSize = 512;
-  state.source = state.audioCtx.createMediaElementSource(state.audio);
-  state.source.connect(state.analyser);
-  state.analyser.connect(state.audioCtx.destination);
-  state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
+  if (!state.audioCtx) {
+    state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    state.analyser = state.audioCtx.createAnalyser();
+    state.analyser.fftSize = 512;
+    state.source = state.audioCtx.createMediaElementSource(state.audio);
+    state.source.connect(state.analyser);
+    state.analyser.connect(state.audioCtx.destination);
+    state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
+  }
+  if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
 }
 
 function getAudioData() {

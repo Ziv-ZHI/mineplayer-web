@@ -45,16 +45,83 @@ canvas#canvas:active { cursor: grabbing; }
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  background: radial-gradient(ellipse at center, rgba(8,12,20,0.92) 0%, rgba(4,6,10,0.99) 70%);
+  background: radial-gradient(ellipse at 50% 40%, rgba(12,16,28,0.92) 0%, rgba(4,6,10,0.99) 70%);
   backdrop-filter: blur(6px);
   transition: opacity 1.2s ease, visibility 1.2s ease;
+  overflow: hidden;
 }
 #welcome.fade-out {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
+
+/* 极光背景 */
+.aurora {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  mix-blend-mode: screen;
+}
+.blob1 {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, #3b82f6, transparent 70%);
+  top: -10%; left: -5%;
+  animation: drift1 18s ease-in-out infinite;
+}
+.blob2 {
+  width: 420px; height: 420px;
+  background: radial-gradient(circle, #8b5cf6, transparent 70%);
+  bottom: -8%; right: -5%;
+  animation: drift2 22s ease-in-out infinite;
+}
+.blob3 {
+  width: 360px; height: 360px;
+  background: radial-gradient(circle, #06b6d4, transparent 70%);
+  top: 40%; left: 50%;
+  animation: drift3 25s ease-in-out infinite;
+}
+@keyframes drift1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(80px, 40px) scale(1.15); }
+  66% { transform: translate(-30px, 60px) scale(0.9); }
+}
+@keyframes drift2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-60px, -30px) scale(1.1); }
+  66% { transform: translate(40px, -50px) scale(0.95); }
+}
+@keyframes drift3 {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-40%, -60%) scale(1.2); }
+}
+
+/* CSS 星空 */
+.starfield {
+  position: absolute;
+  top: 0; left: 0;
+  width: 1px; height: 1px;
+  pointer-events: none;
+  border-radius: 50%;
+  background: transparent;
+  animation: twinkle 4s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* 内容 */
 #welcome-content {
+  position: relative;
+  z-index: 2;
   text-align: center;
   animation: welcomeIn 1.5s ease-out;
 }
@@ -62,26 +129,71 @@ canvas#canvas:active { cursor: grabbing; }
   0% { opacity: 0; transform: translateY(20px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+
+/* 律动条装饰 */
+.eq-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  margin-bottom: 28px;
+}
+.eq-bars span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #3b82f6, #8b5cf6);
+  animation: eqBar 1.2s ease-in-out infinite;
+}
+.eq-bars span:nth-child(1) { animation-delay: 0s; }
+.eq-bars span:nth-child(2) { animation-delay: 0.15s; }
+.eq-bars span:nth-child(3) { animation-delay: 0.3s; }
+.eq-bars span:nth-child(4) { animation-delay: 0.15s; }
+.eq-bars span:nth-child(5) { animation-delay: 0s; }
+@keyframes eqBar {
+  0%, 100% { height: 8px; opacity: 0.5; }
+  50% { height: 32px; opacity: 1; }
+}
+
+/* 标题：渐变流光 */
 #welcome-title {
   font-size: 52px;
   font-weight: 200;
   letter-spacing: 16px;
-  color: rgba(230, 237, 243, 0.95);
-  text-shadow: 0 0 40px rgba(88, 166, 255, 0.25), 0 0 100px rgba(88, 166, 255, 0.12);
   margin-bottom: 12px;
-  animation: titleGlow 5s ease-in-out infinite;
+  background: linear-gradient(120deg, #e6edf3 0%, #93c5fd 30%, #c4b5fd 50%, #93c5fd 70%, #e6edf3 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 6s linear infinite;
+  filter: drop-shadow(0 0 30px rgba(88, 166, 255, 0.3));
 }
-@keyframes titleGlow {
-  0%, 100% { text-shadow: 0 0 40px rgba(88,166,255,0.25), 0 0 100px rgba(88,166,255,0.10); }
-  50% { text-shadow: 0 0 60px rgba(88,166,255,0.40), 0 0 140px rgba(88,166,255,0.18); }
+@keyframes shimmer {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
 }
+
+/* 副标题 */
 #welcome-subtitle {
   font-size: 12px;
   letter-spacing: 8px;
   color: rgba(139, 148, 158, 0.7);
-  margin-bottom: 56px;
+  margin-bottom: 24px;
 }
+
+/* 分割线 */
+.welcome-divider {
+  width: 60px;
+  height: 1px;
+  margin: 0 auto 40px;
+  background: linear-gradient(90deg, transparent, rgba(139, 148, 158, 0.4), transparent);
+}
+
+/* 进入按钮 */
 #welcome-enter {
+  position: relative;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: rgba(230, 237, 243, 0.9);
@@ -93,11 +205,40 @@ canvas#canvas:active { cursor: grabbing; }
   transition: all 0.5s;
   backdrop-filter: blur(8px);
 }
+#welcome-enter::before {
+  content: '';
+  position: absolute;
+  top: -3px; left: -3px; right: -3px; bottom: -3px;
+  border-radius: 31px;
+  border: 1px solid rgba(88, 166, 255, 0.25);
+  opacity: 0;
+  animation: orbitRing 3s linear infinite;
+  transition: opacity 0.5s;
+}
 #welcome-enter:hover {
   border-color: rgba(88, 166, 255, 0.4);
   background: rgba(88, 166, 255, 0.08);
-  box-shadow: 0 0 40px rgba(88, 166, 255, 0.15);
+  box-shadow: 0 0 40px rgba(88, 166, 255, 0.15), inset 0 0 20px rgba(88, 166, 255, 0.05);
   letter-spacing: 8px;
+}
+#welcome-enter:hover::before { opacity: 1; }
+@keyframes orbitRing {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.05); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* 底部提示 */
+#welcome-hint {
+  margin-top: 28px;
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: rgba(139, 148, 158, 0.4);
+  animation: hintPulse 4s ease-in-out infinite;
+}
+@keyframes hintPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
 }
 
 /* ===== 主题按钮（右上角极简） ===== */

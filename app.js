@@ -860,7 +860,24 @@ function bindEvents() {
   state.audio.volume = state.volume;
 }
 
+// ============ 开场页星空生成 ============
+function generateStarfield() {
+  const el = $('starfield');
+  if (!el) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const shadows = [];
+  for (let i = 0; i < 120; i++) {
+    const x = Math.floor(Math.random() * w);
+    const y = Math.floor(Math.random() * h);
+    const opacity = (0.3 + Math.random() * 0.7).toFixed(2);
+    shadows.push(`${x}px ${y}px 0 0 rgba(255,255,255,${opacity})`);
+  }
+  el.style.boxShadow = shadows.join(', ');
+}
+
 // ============ 启动 ============
 initThree();
 bindEvents();
+generateStarfield();
 animate();

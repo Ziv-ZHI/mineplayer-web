@@ -53,9 +53,9 @@
   <div id="drop-zone" class="hidden">
     <div id="drop-inner">
       <div id="drop-icon">&#9835;</div>
-      <p>拖拽音频文件到此处</p>
+      <p>拖拽音频 / NCM 文件到此处</p>
       <label for="file-input" id="btn-load">或点击选择</label>
-      <input type="file" id="file-input" accept="audio/*" multiple>
+      <input type="file" id="file-input" accept="audio/*,.ncm" multiple>
     </div>
   </div>
 
@@ -63,6 +63,7 @@
   <div id="hint" class="hidden">拖拽旋转 &middot; 滚轮/双指缩放 &middot; 点击粒子切歌或暂停</div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -82,6 +82,115 @@ function fmtTime(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
+// ============ NCM 格式解码 ============
+// 网易云 .ncm 加密格式：AES-128-ECB + RC4 流加密
+// 解码后在浏览器内存中还原为原始 mp3/flac
+function u8ToWordArray(u8) {
+  const words = [];
+  for (let i = 0; i < u8.length; i++) {
+    words[i >>> 2] |= u8[i] << (24 - (i % 4) * 8);
+  }
+  return CryptoJS.lib.WordArray.create(words, u8.length);
+}
+function wordArrayToU8(wa) {
+  const { words, sigBytes } = wa;
+  const u8 = new Uint8Array(sigBytes);
+  for (let i = 0; i < sigBytes; i++) {
+    u8[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+  }
+  return u8;
+}
+
+async function decodeNCM(file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // 1. Magic "CTENFDAM"
+  if (view.getUint32(0, true) !== 0x4E455443 || view.getUint32(4, true) !== 0x4D414446) {
+    throw new Error('非 NCM 格式');
+  }
+  offset = 8;
+
+  // 2. 解密 RC4 密钥
+  const keyLen = view.getUint32(offset, true);
+  offset += 4;
+  const encKey = bytes.slice(offset, offset + keyLen);
+  offset += keyLen;
+  for (let i = 0; i < encKey.length; i++) encKey[i] ^= 0x64;
+
+  const coreKey = CryptoJS.enc.Hex.parse('687A52416D736F356B496E6261785700');
+  const keyDecrypted = CryptoJS.AES.decrypt(u8ToWordArray(encKey), coreKey, {
+    mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7,
+  });
+  let keyResult = wordArrayToU8(keyDecrypted);
+  // 去掉 "neteasecloudmusic" 前缀（17 字节），剩余部分 XOR 0x63 得到 RC4 密钥
+  const rc4Key = keyResult.slice(17);
+  for (let i = 0; i < rc4Key.length; i++) rc4Key[i] ^= 0x63;
+
+  // 3. 元数据（可选，含歌曲名和格式信息）
+  const metaLen = view.getUint32(offset, true);
+  offset += 4;
+  let songName = file.name.replace(/\.ncm$/i, '');
+  let format = 'mp3';
+  if (metaLen > 0) {
+    const metaEnc = bytes.slice(offset, offset + metaLen);
+    offset += metaLen;
+    for (let i = 0; i < metaEnc.length; i++) metaEnc[i] ^= 0x63;
+
+    const metaKey = CryptoJS.enc.Hex.parse('2331346C6A6B5F215C5D2630553C2728');
+    const metaDecrypted = CryptoJS.AES.decrypt(u8ToWordArray(metaEnc), metaKey, {
+      mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7,
+    });
+    let metaStr = new TextDecoder().decode(wordArrayToU8(metaDecrypted));
+    if (metaStr.startsWith('music:')) metaStr = metaStr.slice(6);
+    try {
+      const meta = JSON.parse(metaStr);
+      if (meta.musicName) songName = meta.musicName;
+      if (meta.format) format = meta.format;
+    } catch (e) { /* 元数据解析失败就用文件名 */ }
+  } else {
+    offset += metaLen;
+  }
+
+  // 4. 跳过 CRC32
+  offset += 4;
+
+  // 5. 跳过专辑封面图
+  const imgSize = view.getUint32(offset, true);
+  offset += 4;
+  offset += imgSize;
+
+  // 6. RC4 解密音频数据
+  const audioData = bytes.slice(offset);
+
+  // 构建 RC4 密钥盒（KSA）
+  const box = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) box[i] = i;
+  let j = 0;
+  for (let i = 0; i < 256; i++) {
+    j = (box[i] + j + rc4Key[i % rc4Key.length]) & 0xff;
+    const tmp = box[i]; box[i] = box[j]; box[j] = tmp;
+  }
+  // 生成 256 字节密钥流（NCM 特有的修改版 PRGA）
+  const stream = new Uint8Array(256);
+  let j2 = 0;
+  for (let i = 0; i < 256; i++) {
+    j2 = (box[i] + j2) & 0xff;
+    const tmp = box[i]; box[i] = box[j2]; box[j2] = tmp;
+    stream[i] = box[(box[i] + box[j2]) & 0xff];
+  }
+  // 逐字节异或解密
+  for (let i = 0; i < audioData.length; i++) {
+    audioData[i] ^= stream[(i + 1) & 0xff];
+  }
+
+  const mime = format === 'flac' ? 'audio/flac' : 'audio/mpeg';
+  const blob = new Blob([audioData], { type: mime });
+  return { name: songName, blob, format };
+}
+
 // ============ Toast（歌曲名短暂浮现） ============
 let toastTimer = null;
 function showToast(text, duration = 2500) {
@@ -583,14 +692,34 @@ function getAudioData() {
 }
 
 // ============ 文件 ============
-function addFiles(files) {
+async function addFiles(files) {
   const hadSongs = state.playlist.length > 0;
-  files.forEach(f => {
+  const ncmFiles = files.filter(f => f.name.toLowerCase().endsWith('.ncm'));
+  const normalFiles = files.filter(f => !f.name.toLowerCase().endsWith('.ncm'));
+
+  // 解码 NCM 文件
+  for (const f of ncmFiles) {
+    const baseName = f.name.replace(/\.ncm$/i, '');
+    showToast('正在解码 ' + baseName + ' ...', 30000);
+    try {
+      const decoded = await decodeNCM(f);
+      const h = hashStr(decoded.name);
+      state.playlist.push({ name: decoded.name, url: URL.createObjectURL(decoded.blob), hue: h % 360 });
+    } catch (e) {
+      showToast('解码失败: ' + baseName);
+      console.error('NCM decode error:', e);
+    }
+  }
+  if (ncmFiles.length > 0) showToast(ncmFiles.length > 1 ? `已解码 ${ncmFiles.length} 首 NCM` : '解码完成', 1500);
+
+  // 普通音频文件直接导入
+  for (const f of normalFiles) {
     const name = f.name.replace(/\.[^.]+$/, '');
     const url = URL.createObjectURL(f);
     const h = hashStr(name);
     state.playlist.push({ name, url, hue: h % 360 });
-  });
+  }
+
   $('drop-zone').classList.add('hidden');
 
   // 为新加入的歌曲创建粒子球
@@ -604,8 +733,8 @@ function addFiles(files) {
     setTimeout(() => $('hint').classList.add('hidden'), 5000);
     playTrack(0);
   } else {
-    const added = files.length;
-    showToast(added === 1 ? '已添加 1 首音乐' : `已添加 ${added} 首音乐`);
+    const added = ncmFiles.length + normalFiles.length;
+    if (added > 1) showToast(`已添加 ${added} 首音乐`);
   }
 }
 
@@ -851,7 +980,9 @@ function bindEvents() {
   window.addEventListener('drop', e => {
     e.preventDefault();
     document.body.classList.remove('drag-active');
-    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
+    const files = [...e.dataTransfer.files].filter(f =>
+      f.type.startsWith('audio/') || f.name.toLowerCase().endsWith('.ncm')
+    );
     if (files.length) addFiles(files);
   });
 

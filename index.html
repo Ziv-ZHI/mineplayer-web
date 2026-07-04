@@ -7,65 +7,44 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <!-- 粒子画布 -->
-    <canvas id="particle-canvas"></canvas>
+  <canvas id="canvas"></canvas>
 
-    <!-- 主界面 -->
-    <div id="main-ui">
-      <!-- 顶部导航 -->
-      <header id="top-bar">
-        <span class="logo">MinePlayer</span>
-        <button id="btn-theme" title="切换主题">&#9790;</button>
-      </header>
+  <!-- 顶部最小信息条 -->
+  <div id="top-bar">
+    <span class="logo">MinePlayer</span>
+    <button id="btn-theme" title="主题">&#9790;</button>
+  </div>
 
-      <!-- 视觉区域 -->
-      <div id="visual-area">
-        <div id="album-art">
-          <div id="default-icon">&#9835;</div>
-        </div>
-      </div>
+  <!-- 当前播放浮层（极简） -->
+  <div id="now-playing" class="hidden">
+    <span id="np-title"></span>
+    <span id="np-time"></span>
+  </div>
 
-      <!-- 歌曲信息 -->
-      <div id="track-info">
-        <div id="track-title">未加载音乐</div>
-        <div id="track-artist">请选择音频文件</div>
-      </div>
-
-      <!-- 进度条 -->
-      <div id="progress-area">
-        <span id="time-current">0:00</span>
-        <input type="range" id="progress-bar" min="0" max="100" value="0" step="0.1">
-        <span id="time-duration">0:00</span>
-      </div>
-
-      <!-- 控制按钮 -->
-      <div id="controls">
-        <button id="btn-mode" title="播放模式">&#10227;</button>
-        <button id="btn-prev" title="上一首">&#9664;&#9664;</button>
-        <button id="btn-play" title="播放/暂停">&#9654;</button>
-        <button id="btn-next" title="下一首">&#9654;&#9654;</button>
-        <button id="btn-vol" title="音量">&#128266;</button>
-      </div>
-
-      <!-- 音量条 -->
-      <div id="volume-area">
-        <input type="range" id="volume-bar" min="0" max="100" value="80" step="1">
-      </div>
-
-      <!-- 文件选择 -->
-      <div id="file-area">
-        <label for="file-input" id="btn-load">选择音频文件</label>
-        <input type="file" id="file-input" accept="audio/*" multiple>
-        <div id="file-list-label">或拖拽文件到此处</div>
-      </div>
-
-      <!-- 播放列表 -->
-      <div id="playlist-panel">
-        <div id="playlist-header">播放列表</div>
-        <ul id="playlist"></ul>
-      </div>
+  <!-- 底部迷你控制条 -->
+  <div id="mini-controls" class="hidden">
+    <button id="btn-prev">&#9664;&#9664;</button>
+    <button id="btn-play">&#9654;</button>
+    <button id="btn-next">&#9654;&#9654;</button>
+    <div id="progress-track">
+      <div id="progress-fill"></div>
     </div>
+    <button id="btn-mode">&#10227;</button>
+  </div>
+
+  <!-- 加载入口 -->
+  <div id="drop-zone">
+    <div id="drop-inner">
+      <div id="drop-icon">&#9835;</div>
+      <p>拖拽音频文件到此处</p>
+      <label for="file-input" id="btn-load">或点击选择</label>
+      <input type="file" id="file-input" accept="audio/*" multiple>
+    </div>
+  </div>
+
+  <!-- 音量（悬浮右下角） -->
+  <div id="vol-float" class="hidden">
+    <input type="range" id="volume-bar" min="0" max="100" value="80" step="1" orient="vertical">
   </div>
 
   <script src="app.js"></script>

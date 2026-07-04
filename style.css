@@ -151,19 +151,22 @@ canvas#canvas:active { cursor: grabbing; }
 /* ===== 迷你控制 ===== */
 #mini-controls {
   position: fixed;
-  bottom: 24px;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: var(--glass);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: 28px;
-  padding: 8px 16px;
+  gap: 8px;
+  background: rgba(10, 14, 20, 0.35);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  padding: 6px 12px;
   transition: opacity 0.3s, transform 0.3s;
+}
+body.light #mini-controls {
+  background: rgba(255, 255, 255, 0.35);
 }
 #mini-controls.hidden {
   opacity: 0;
@@ -174,29 +177,29 @@ canvas#canvas:active { cursor: grabbing; }
   background: none;
   border: none;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  width: 36px; height: 36px;
+  width: 32px; height: 32px;
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
   transition: background 0.2s;
 }
-#mini-controls button:hover { background: rgba(255,255,255,0.1); }
-body.light #mini-controls button:hover { background: rgba(0,0,0,0.06); }
+#mini-controls button:hover { background: rgba(255,255,255,0.08); }
+body.light #mini-controls button:hover { background: rgba(0,0,0,0.05); }
 #btn-play {
   background: var(--accent) !important;
   color: #fff !important;
-  font-size: 16px !important;
-  width: 42px !important; height: 42px !important;
+  font-size: 15px !important;
+  width: 38px !important; height: 38px !important;
 }
 #btn-play:hover { opacity: 0.85; }
 #btn-add {
-  font-size: 18px !important;
+  font-size: 16px !important;
   color: var(--text2) !important;
   border: 1px solid var(--glass-border) !important;
-  margin-left: 4px;
+  margin-left: 2px;
 }
 #btn-add:hover {
   color: var(--accent) !important;
@@ -205,14 +208,14 @@ body.light #mini-controls button:hover { background: rgba(0,0,0,0.06); }
 
 /* ===== 彩色进度条 ===== */
 #progress-track {
-  width: 180px;
-  height: 4px;
-  background: rgba(255,255,255,0.10);
+  width: 160px;
+  height: 3px;
+  background: rgba(255,255,255,0.08);
   border-radius: 2px;
   cursor: pointer;
   overflow: hidden;
 }
-body.light #progress-track { background: rgba(0,0,0,0.08); }
+body.light #progress-track { background: rgba(0,0,0,0.06); }
 #progress-fill {
   height: 100%;
   width: 0%;

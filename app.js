@@ -101,15 +101,17 @@ let freqBars;
 
 const camCtrl = {
   azimuth: 0,
-  polar: Math.PI / 2,
-  distance: 300,
+  polar: Math.PI / 2.2,
+  distance: 400,
   targetAzimuth: 0,
-  targetPolar: Math.PI / 2,
-  targetDist: 300,
+  targetPolar: Math.PI / 2.2,
+  targetDist: 400,
   isDragging: false,
   lastX: 0,
   lastY: 0,
-  autoRotate: 0.0015,
+  downX: 0,
+  downY: 0,
+  autoRotate: 0.0012,
   pinchDist: 0,
 };
 
@@ -117,9 +119,9 @@ const camCtrl = {
 function initThree() {
   const canvas = $('canvas');
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x06080c, 0.0015);
+  scene.fog = new THREE.FogExp2(0x06080c, 0.0008);
 
-  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
   updateCamera();
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -129,8 +131,8 @@ function initThree() {
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
-  scene.add(new THREE.AmbientLight(0x404060, 0.5));
-  const pl = new THREE.PointLight(0x6080ff, 1, 500);
+  scene.add(new THREE.AmbientLight(0x404060, 0.4));
+  const pl = new THREE.PointLight(0x6080ff, 1.5, 1000);
   pl.position.set(0, 0, 0);
   scene.add(pl);
 
@@ -145,7 +147,6 @@ function initThree() {
   canvas.addEventListener('touchstart', onTouchStart, { passive: false });
   canvas.addEventListener('touchmove', onTouchMove, { passive: false });
   canvas.addEventListener('touchend', onTouchEnd);
-  canvas.addEventListener('click', onCanvasClick);
 }
 
 function onResize() {
@@ -154,35 +155,76 @@ function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ============ 背景粒子云（情绪着色器） ============
+// ============ 背景粒子云（银河星空 + 情绪着色器） ============
 function createBgParticles() {
-  const count = 800;
+  const count = 3500;
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
   const hues = new Float32Array(count);    // 每个粒子的色相偏移
   const sizes = new Float32Array(count);
+  const brights = new Float32Array(count);  // 个体亮度因子
 
   bgParticleData = [];
 
   for (let i = 0; i < count; i++) {
-    const r = 200 + Math.random() * 600;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
+    // 银河盘状分布：大部分粒子在扁平盘面上，少量在球冠
+    let x, y, z, r;
+    const discRoll = Math.random();
+
+    if (discRoll < 0.75) {
+      // 盘面粒子（银河臂）
+      r = 150 + Math.random() * 900;
+      const theta = Math.random() * Math.PI * 2;
+      // 螺旋臂偏移
+      const armOffset = Math.sin(theta * 2 + r * 0.003) * 40;
+      const thickness = (Math.random() - 0.5) * 80 * Math.exp(-r / 600);
+      x = r * Math.cos(theta) + armOffset * Math.cos(theta + 0.5);
+      z = r * Math.sin(theta) + armOffset * Math.sin(theta + 0.5);
+      y = thickness;
+    } else if (discRoll < 0.92) {
+      // 球状晕（少量散布在球面）
+      r = 300 + Math.random() * 700;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      x = r * Math.sin(phi) * Math.cos(theta);
+      y = r * Math.sin(phi) * Math.sin(theta);
+      z = r * Math.cos(phi);
+    } else {
+      // 近景尘埃（靠近相机的微小粒子）
+      r = 50 + Math.random() * 200;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      x = r * Math.sin(phi) * Math.cos(theta);
+      y = r * Math.sin(phi) * Math.sin(theta);
+      z = r * Math.cos(phi);
+    }
 
     positions[i * 3] = x;
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
 
-    // 色相偏移：±0.12（约43度），让粒子在情绪色周围有微妙变化
-    hues[i] = (Math.random() - 0.5) * 0.24;
-    sizes[i] = Math.random() * 4 + 2;
+    // 色相偏移：盘面粒子偏移大（有星云感），球晕粒子偏移小
+    hues[i] = (Math.random() - 0.5) * 0.3;
+
+    // 多元大小：70% 微尘, 20% 星星, 8% 亮星, 2% 巨星
+    const sizeRoll = Math.random();
+    if (sizeRoll < 0.70) {
+      sizes[i] = 1 + Math.random() * 2;      // 微尘 1-3
+      brights[i] = 0.3 + Math.random() * 0.3;
+    } else if (sizeRoll < 0.90) {
+      sizes[i] = 3 + Math.random() * 4;      // 星星 3-7
+      brights[i] = 0.5 + Math.random() * 0.3;
+    } else if (sizeRoll < 0.98) {
+      sizes[i] = 7 + Math.random() * 6;      // 亮星 7-13
+      brights[i] = 0.7 + Math.random() * 0.3;
+    } else {
+      sizes[i] = 13 + Math.random() * 10;    // 巨星 13-23
+      brights[i] = 0.9 + Math.random() * 0.1;
+    }
 
     bgParticleData.push({
       x, y, z,
-      baseR: r,
+      baseR: Math.sqrt(x*x + y*y + z*z),
       vx: (Math.random() - 0.5) * 0.02,
       vy: (Math.random() - 0.5) * 0.02,
       vz: (Math.random() - 0.5) * 0.02,
@@ -194,6 +236,7 @@ function createBgParticles() {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('aHue', new THREE.BufferAttribute(hues, 1));
   geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('aBright', new THREE.BufferAttribute(brights, 1));
 
   const mat = new THREE.ShaderMaterial({
     uniforms: {
@@ -209,6 +252,7 @@ function createBgParticles() {
     vertexShader: `
       attribute float size;
       attribute float aHue;
+      attribute float aBright;
       varying vec3 vColor;
       varying float vAlpha;
       uniform float uTime;
@@ -230,18 +274,18 @@ function createBgParticles() {
         // 情绪色相 + 粒子偏移
         float hue = mod(uMoodHue + aHue, 1.0);
         // 节拍跳动时饱和度增强
-        float sat = uMoodSat * (0.75 + uBeatPulse * 0.5);
-        // 低频驱动亮度
-        float light = uMoodLight + uBass * 0.18 + uBeatPulse * 0.12;
+        float sat = uMoodSat * (0.6 + uBeatPulse * 0.5);
+        // 低频驱动亮度，个体亮度因子让粒子层次分明
+        float light = (uMoodLight * 0.6 + aBright * 0.5) + uBass * 0.15 * aBright + uBeatPulse * 0.1;
         vColor = hsv2rgb(vec3(hue, sat, clamp(light, 0.0, 1.0)));
-        // 距离越远透明度越低
-        vAlpha = 0.8 + uBeatPulse * 0.2;
+        // 透明度也跟个体亮度关联
+        vAlpha = aBright * (0.6 + uBeatPulse * 0.3);
 
         vec3 pos = position;
         float wave = sin(uTime * 0.5 + position.x * 0.01) * (3.0 + uMid * 20.0);
-        pos += normalize(position) * wave * 0.1;
+        pos += normalize(position + vec3(0.001)) * wave * 0.08;
         vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = max(3.0, size * uPixelRatio * (1.0 + uBass * 3.0 + uBeatPulse * 1.5) * (400.0 / -mv.z));
+        gl_PointSize = max(2.0, size * uPixelRatio * (1.0 + uBass * 2.5 + uBeatPulse * 1.2) * (500.0 / -mv.z));
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -252,7 +296,9 @@ function createBgParticles() {
         vec2 uv = gl_PointCoord - 0.5;
         float d = length(uv);
         if (d > 0.5) discard;
+        // 中心亮、边缘暗，模拟星光
         float alpha = smoothstep(0.5, 0.0, d);
+        alpha = pow(alpha, 1.5);
         gl_FragColor = vec4(vColor, alpha * vAlpha);
       }
     `,
@@ -291,7 +337,7 @@ function createSongOrb(track, index) {
   const hue = track.hue;
   const color = new THREE.Color().setHSL(hue / 360, 0.75, 0.55);
 
-  const geo = new THREE.IcosahedronGeometry(12, 2);
+  const geo = new THREE.IcosahedronGeometry(18, 2);
   const mat = new THREE.MeshPhongMaterial({
     color: color,
     emissive: color,
@@ -302,7 +348,7 @@ function createSongOrb(track, index) {
   });
   const mesh = new THREE.Mesh(geo, mat);
 
-  const r = 80 + Math.random() * 120;
+  const r = 120 + Math.random() * 200;
   const theta = Math.random() * Math.PI * 2;
   const phi = Math.acos(2 * Math.random() - 1);
   mesh.position.set(
@@ -311,7 +357,7 @@ function createSongOrb(track, index) {
     r * Math.cos(phi)
   );
 
-  const wireGeo = new THREE.IcosahedronGeometry(14, 1);
+  const wireGeo = new THREE.IcosahedronGeometry(22, 1);
   const wireMat = new THREE.MeshBasicMaterial({
     color: color,
     wireframe: true,
@@ -330,8 +376,14 @@ function createSongOrb(track, index) {
     depthWrite: false,
   });
   const halo = new THREE.Sprite(haloMat);
-  halo.scale.set(50, 50, 1);
+  halo.scale.set(70, 70, 1);
   mesh.add(halo);
+
+  // 隐形 hitbox — 比球体大很多，方便点击
+  const hitGeo = new THREE.SphereGeometry(40, 8, 8);
+  const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitbox = new THREE.Mesh(hitGeo, hitMat);
+  mesh.add(hitbox);
 
   mesh.userData = {
     track,
@@ -384,6 +436,8 @@ function onMouseDown(e) {
   camCtrl.isDragging = true;
   camCtrl.lastX = e.clientX;
   camCtrl.lastY = e.clientY;
+  camCtrl.downX = e.clientX;
+  camCtrl.downY = e.clientY;
 }
 function onMouseMove(e) {
   if (!camCtrl.isDragging) return;
@@ -395,7 +449,15 @@ function onMouseMove(e) {
   camCtrl.lastX = e.clientX;
   camCtrl.lastY = e.clientY;
 }
-function onMouseUp() {
+function onMouseUp(e) {
+  if (camCtrl.isDragging) {
+    // 判断是否为点击（mousedown 到 mouseup 位移很小）
+    const dx = Math.abs(e.clientX - camCtrl.downX);
+    const dy = Math.abs(e.clientY - camCtrl.downY);
+    if (dx < 8 && dy < 8) {
+      handleOrbClick(e.clientX, e.clientY);
+    }
+  }
   camCtrl.isDragging = false;
 }
 
@@ -405,6 +467,8 @@ function onTouchStart(e) {
     camCtrl.isDragging = true;
     camCtrl.lastX = e.touches[0].clientX;
     camCtrl.lastY = e.touches[0].clientY;
+    camCtrl.downX = e.touches[0].clientX;
+    camCtrl.downY = e.touches[0].clientY;
   } else if (e.touches.length === 2) {
     e.preventDefault();
     camCtrl.isDragging = false;
@@ -423,7 +487,7 @@ function onTouchMove(e) {
     if (camCtrl.pinchDist > 0) {
       const delta = camCtrl.pinchDist - dist;
       camCtrl.targetDist += delta * 1.5;
-      camCtrl.targetDist = Math.max(60, Math.min(800, camCtrl.targetDist));
+      camCtrl.targetDist = Math.max(40, Math.min(2000, camCtrl.targetDist));
     }
     camCtrl.pinchDist = dist;
   } else if (e.touches.length === 1 && camCtrl.isDragging) {
@@ -439,6 +503,14 @@ function onTouchMove(e) {
 }
 function onTouchEnd(e) {
   if (e.touches.length === 0) {
+    // 单指点击检测
+    if (camCtrl.isDragging) {
+      const dx = Math.abs(camCtrl.lastX - camCtrl.downX);
+      const dy = Math.abs(camCtrl.lastY - camCtrl.downY);
+      if (dx < 10 && dy < 10) {
+        handleOrbClick(camCtrl.lastX, camCtrl.lastY);
+      }
+    }
     camCtrl.isDragging = false;
     camCtrl.pinchDist = 0;
   } else if (e.touches.length === 1) {
@@ -446,29 +518,36 @@ function onTouchEnd(e) {
     camCtrl.isDragging = true;
     camCtrl.lastX = e.touches[0].clientX;
     camCtrl.lastY = e.touches[0].clientY;
+    camCtrl.downX = e.touches[0].clientX;
+    camCtrl.downY = e.touches[0].clientY;
   }
 }
 
 function onWheel(e) {
   e.preventDefault();
-  camCtrl.targetDist += e.deltaY * 0.5;
-  camCtrl.targetDist = Math.max(60, Math.min(800, camCtrl.targetDist));
+  camCtrl.targetDist += e.deltaY * 0.8;
+  camCtrl.targetDist = Math.max(40, Math.min(2000, camCtrl.targetDist));
 }
 
-function onCanvasClick(e) {
-  if (Math.abs(e.clientX - camCtrl.lastX) > 5 || Math.abs(e.clientY - camCtrl.lastY) > 5) return;
-  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+function handleOrbClick(clientX, clientY) {
+  mouse.x = (clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(songOrbs, false);
+  // 检测歌曲球体（包括子物体的隐形 hitbox）
+  const hits = raycaster.intersectObjects(songOrbs, true);
   if (hits.length > 0) {
-    const idx = hits[0].object.userData.index;
-    if (idx === state.currentIndex) {
-      // 点击当前播放的粒子 → 暂停/继续
-      togglePlay();
-    } else {
-      // 点击其他粒子 → 切歌
-      playTrack(idx);
+    // 找到被点击的根 songOrb
+    let target = hits[0].object;
+    while (target.parent && !target.userData.track) {
+      target = target.parent;
+    }
+    if (target.userData.track) {
+      const idx = target.userData.index;
+      if (idx === state.currentIndex) {
+        togglePlay();
+      } else {
+        playTrack(idx);
+      }
     }
   }
 }
@@ -671,11 +750,11 @@ function animate() {
       orb.material.emissiveIntensity = ud.baseEmissive + audio.mid * 1.5 + mood.beatPulse * 0.8;
       ud.wire.material.opacity = 0.3 + audio.treble * 0.5;
       ud.halo.material.opacity = 0.4 + audio.bass * 0.5;
-      ud.halo.scale.setScalar(50 + audio.bass * 80);
+      ud.halo.scale.setScalar(70 + audio.bass * 100);
 
       // 频谱环
       freqBars.visible = true;
-      const ringR = 22 * scale;
+      const ringR = 32 * scale;
       freqBars.children.forEach((bar, bi) => {
         const fi = Math.floor((bi / freqBars.children.length) * (audio.freq.length * 0.7));
         const v = audio.freq.length > 0 ? audio.freq[fi] / 255 : 0;
@@ -702,9 +781,9 @@ function animate() {
         const dy = orb.position.y - other.position.y;
         const dz = orb.position.z - other.position.z;
         const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < 2500 && d2 > 0.01) {
+        if (d2 < 6400 && d2 > 0.01) {
           const d = Math.sqrt(d2);
-          const f = (50 - d) * 0.0008;
+          const f = (80 - d) * 0.0006;
           ud.vel.x += (dx / d) * f;
           ud.vel.y += (dy / d) * f;
           ud.vel.z += (dz / d) * f;

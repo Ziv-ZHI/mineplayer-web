@@ -1,0 +1,299 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --accent: #58a6ff;
+  --accent2: #f778ba;
+  --danger: #f85149;
+}
+
+body.light {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text2: #656d76;
+  --accent: #0969da;
+  --accent2: #bf3989;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 粒子画布 */
+#particle-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 主界面 */
+#main-ui {
+  position: relative;
+  z-index: 1;
+  width: 380px;
+  max-height: 90vh;
+  background: var(--surface);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  overflow-y: auto;
+}
+
+/* 顶部 */
+#top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+#btn-theme {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* 视觉区域 */
+#visual-area {
+  display: flex;
+  justify-content: center;
+}
+#album-art {
+  width: 200px;
+  height: 200px;
+  border-radius: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+#default-icon {
+  font-size: 64px;
+  color: var(--text2);
+}
+
+/* 歌曲信息 */
+#track-info {
+  text-align: center;
+}
+#track-title {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#track-artist {
+  font-size: 13px;
+  color: var(--text2);
+  margin-top: 4px;
+}
+
+/* 进度条 */
+#progress-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text2);
+}
+#progress-bar {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+#progress-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* 控制按钮 */
+#controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+#controls button {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background 0.2s;
+}
+#controls button:hover {
+  background: var(--border);
+}
+#btn-play {
+  background: var(--accent) !important;
+  color: #fff !important;
+  font-size: 24px;
+  width: 56px;
+  height: 56px;
+}
+#btn-play:hover {
+  opacity: 0.9;
+}
+
+/* 音量 */
+#volume-area {
+  display: flex;
+  justify-content: center;
+}
+#volume-bar {
+  width: 60%;
+  -webkit-appearance: none;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+#volume-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent2);
+  cursor: pointer;
+}
+
+/* 文件选择 */
+#file-area {
+  text-align: center;
+  padding: 12px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+}
+#file-input {
+  display: none;
+}
+#btn-load {
+  display: inline-block;
+  padding: 8px 20px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+#file-list-label {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+/* 播放列表 */
+#playlist-panel {
+  max-height: 180px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+#playlist-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+#playlist {
+  list-style: none;
+}
+#playlist li {
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#playlist li:hover {
+  background: var(--bg);
+}
+#playlist li.active {
+  background: var(--accent);
+  color: #fff;
+}
+#playlist li .duration {
+  font-size: 11px;
+  color: var(--text2);
+}
+#playlist li.active .duration {
+  color: rgba(255,255,255,0.7);
+}
+
+/* 拖拽高亮 */
+#file-area.drag-over {
+  border-color: var(--accent);
+  background: rgba(88,166,255,0.1);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}

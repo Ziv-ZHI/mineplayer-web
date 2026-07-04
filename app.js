@@ -82,6 +82,16 @@ function fmtTime(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
+// ============ Toast（歌曲名短暂浮现） ============
+let toastTimer = null;
+function showToast(text, duration = 2500) {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
 // ============ Three.js 场景 ============
 let scene, camera, renderer, raycaster, mouse;
 let songOrbs = [];
@@ -100,6 +110,7 @@ const camCtrl = {
   lastX: 0,
   lastY: 0,
   autoRotate: 0.0015,
+  pinchDist: 0,
 };
 
 // ============ 初始化 ============
@@ -394,27 +405,54 @@ function onTouchStart(e) {
     camCtrl.isDragging = true;
     camCtrl.lastX = e.touches[0].clientX;
     camCtrl.lastY = e.touches[0].clientY;
+  } else if (e.touches.length === 2) {
+    e.preventDefault();
+    camCtrl.isDragging = false;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    camCtrl.pinchDist = Math.sqrt(dx * dx + dy * dy);
   }
 }
 function onTouchMove(e) {
-  if (!camCtrl.isDragging || e.touches.length !== 1) return;
-  e.preventDefault();
-  const dx = e.touches[0].clientX - camCtrl.lastX;
-  const dy = e.touches[0].clientY - camCtrl.lastY;
-  camCtrl.targetAzimuth -= dx * 0.005;
-  camCtrl.targetPolar -= dy * 0.005;
-  camCtrl.targetPolar = Math.max(0.15, Math.min(Math.PI - 0.15, camCtrl.targetPolar));
-  camCtrl.lastX = e.touches[0].clientX;
-  camCtrl.lastY = e.touches[0].clientY;
+  if (e.touches.length === 2) {
+    // 双指缩放
+    e.preventDefault();
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (camCtrl.pinchDist > 0) {
+      const delta = camCtrl.pinchDist - dist;
+      camCtrl.targetDist += delta * 1.5;
+      camCtrl.targetDist = Math.max(60, Math.min(800, camCtrl.targetDist));
+    }
+    camCtrl.pinchDist = dist;
+  } else if (e.touches.length === 1 && camCtrl.isDragging) {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - camCtrl.lastX;
+    const dy = e.touches[0].clientY - camCtrl.lastY;
+    camCtrl.targetAzimuth -= dx * 0.005;
+    camCtrl.targetPolar -= dy * 0.005;
+    camCtrl.targetPolar = Math.max(0.15, Math.min(Math.PI - 0.15, camCtrl.targetPolar));
+    camCtrl.lastX = e.touches[0].clientX;
+    camCtrl.lastY = e.touches[0].clientY;
+  }
 }
-function onTouchEnd() {
-  camCtrl.isDragging = false;
+function onTouchEnd(e) {
+  if (e.touches.length === 0) {
+    camCtrl.isDragging = false;
+    camCtrl.pinchDist = 0;
+  } else if (e.touches.length === 1) {
+    camCtrl.pinchDist = 0;
+    camCtrl.isDragging = true;
+    camCtrl.lastX = e.touches[0].clientX;
+    camCtrl.lastY = e.touches[0].clientY;
+  }
 }
 
 function onWheel(e) {
   e.preventDefault();
   camCtrl.targetDist += e.deltaY * 0.5;
-  camCtrl.targetDist = Math.max(80, Math.min(600, camCtrl.targetDist));
+  camCtrl.targetDist = Math.max(60, Math.min(800, camCtrl.targetDist));
 }
 
 function onCanvasClick(e) {
@@ -425,7 +463,13 @@ function onCanvasClick(e) {
   const hits = raycaster.intersectObjects(songOrbs, false);
   if (hits.length > 0) {
     const idx = hits[0].object.userData.index;
-    playTrack(idx);
+    if (idx === state.currentIndex) {
+      // 点击当前播放的粒子 → 暂停/继续
+      togglePlay();
+    } else {
+      // 点击其他粒子 → 切歌
+      playTrack(idx);
+    }
   }
 }
 
@@ -461,6 +505,7 @@ function getAudioData() {
 
 // ============ 文件 ============
 function addFiles(files) {
+  const hadSongs = state.playlist.length > 0;
   files.forEach(f => {
     const name = f.name.replace(/\.[^.]+$/, '');
     const url = URL.createObjectURL(f);
@@ -469,14 +514,20 @@ function addFiles(files) {
   });
   $('drop-zone').classList.add('hidden');
 
+  // 为新加入的歌曲创建粒子球
   state.playlist.forEach((t, i) => {
     if (!songOrbs[i]) createSongOrb(t, i);
   });
 
-  $('hint').classList.remove('hidden');
-  setTimeout(() => $('hint').classList.add('hidden'), 5000);
-
-  if (state.currentIndex === -1) playTrack(0);
+  // 显示操作提示
+  if (!hadSongs) {
+    $('hint').classList.remove('hidden');
+    setTimeout(() => $('hint').classList.add('hidden'), 5000);
+    playTrack(0);
+  } else {
+    const added = files.length;
+    showToast(added === 1 ? '已添加 1 首音乐' : `已添加 ${added} 首音乐`);
+  }
 }
 
 // ============ 播放控制 ============
@@ -490,8 +541,7 @@ function playTrack(i) {
   state.isPlaying = true;
   $('btn-play').textContent = '\u23F8';
   $('mini-controls').classList.remove('hidden');
-  $('now-playing').classList.remove('hidden');
-  $('np-title').textContent = t.name;
+  showToast('\u266B  ' + t.name);
   initAudioAnalyser();
 }
 
@@ -500,9 +550,11 @@ function togglePlay() {
   if (state.isPlaying) {
     state.audio.pause();
     $('btn-play').textContent = '\u25B6';
+    showToast('已暂停');
   } else {
     state.audio.play();
     $('btn-play').textContent = '\u23F8';
+    showToast('\u266B  ' + state.playlist[state.currentIndex].name);
   }
   state.isPlaying = !state.isPlaying;
 }
@@ -538,7 +590,6 @@ function updateProgress() {
   if (!state.audio.duration) return;
   const pct = (state.audio.currentTime / state.audio.duration) * 100;
   $('progress-fill').style.width = pct + '%';
-  $('np-time').textContent = fmtTime(state.audio.currentTime) + ' / ' + fmtTime(state.audio.duration);
 }
 
 // ============ 主循环 ============
@@ -694,6 +745,9 @@ function bindEvents() {
   $('btn-next').addEventListener('click', playNext);
   $('btn-mode').addEventListener('click', toggleMode);
 
+  // 添加音乐按钮 — 随时导入更多
+  $('btn-add').addEventListener('click', () => $('file-input').click());
+
   $('progress-track').addEventListener('click', e => {
     if (!state.audio.duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -706,7 +760,10 @@ function bindEvents() {
     $('btn-theme').textContent = document.body.classList.contains('light') ? '\u{1F319}' : '\u2603';
   });
 
-  $('file-input').addEventListener('change', e => addFiles([...e.target.files]));
+  $('file-input').addEventListener('change', e => {
+    addFiles([...e.target.files]);
+    e.target.value = '';
+  });
 
   window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-active'); });
   window.addEventListener('dragleave', e => {

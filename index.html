@@ -21,11 +21,8 @@
   <!-- 主题按钮（右上角，极简） -->
   <button id="btn-theme" title="主题">&#9790;</button>
 
-  <!-- 当前播放浮层 -->
-  <div id="now-playing" class="hidden">
-    <span id="np-title"></span>
-    <span id="np-time"></span>
-  </div>
+  <!-- 歌曲名 toast（短暂浮现后消失） -->
+  <div id="toast" class="hidden"></div>
 
   <!-- 底部迷你控制条 -->
   <div id="mini-controls" class="hidden">
@@ -36,6 +33,7 @@
       <div id="progress-fill"></div>
     </div>
     <button id="btn-mode">&#10227;</button>
+    <button id="btn-add" title="添加音乐">＋</button>
   </div>
 
   <!-- 拖拽入口 -->
@@ -49,7 +47,7 @@
   </div>
 
   <!-- 提示 -->
-  <div id="hint" class="hidden">拖拽旋转 &middot; 滚轮缩放 &middot; 点击粒子切歌</div>
+  <div id="hint" class="hidden">拖拽旋转 &middot; 滚轮/双指缩放 &middot; 点击粒子切歌或暂停</div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="app.js"></script>

@@ -119,38 +119,33 @@ canvas#canvas:active { cursor: grabbing; }
 }
 #btn-theme:hover { opacity: 1; }
 
-/* ===== 当前播放 ===== */
-#now-playing {
+/* ===== 歌曲名 toast ===== */
+#toast {
   position: fixed;
-  top: 24px;
+  top: 32px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(-10px);
   z-index: 10;
   background: var(--glass);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
-  padding: 6px 16px;
+  padding: 8px 24px;
   font-size: 13px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  max-width: 80vw;
-  pointer-events: none;
-  transition: opacity 0.3s;
-}
-#now-playing.hidden { opacity: 0; }
-#np-title {
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: var(--text);
   white-space: nowrap;
+  max-width: 70vw;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: none;
 }
-#np-time {
-  color: var(--text2);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* ===== 迷你控制 ===== */
@@ -197,6 +192,16 @@ body.light #mini-controls button:hover { background: rgba(0,0,0,0.06); }
   width: 42px !important; height: 42px !important;
 }
 #btn-play:hover { opacity: 0.85; }
+#btn-add {
+  font-size: 18px !important;
+  color: var(--text2) !important;
+  border: 1px solid var(--glass-border) !important;
+  margin-left: 4px;
+}
+#btn-add:hover {
+  color: var(--accent) !important;
+  border-color: rgba(88,166,255,0.3) !important;
+}
 
 /* ===== 彩色进度条 ===== */
 #progress-track {

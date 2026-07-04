@@ -23,7 +23,7 @@ const mood = {
   energy: 0,
   targetHue: 220, currentHue: 220,
   targetSat: 0.7, currentSat: 0.7,
-  targetLight: 0.5, currentLight: 0.5,
+  targetLight: 0.6, currentLight: 0.6,
   beatPulse: 0,
   lastBass: 0,
 };
@@ -48,17 +48,19 @@ function updateMood(audio) {
   mood.beatPulse *= 0.90;
   mood.lastBass = audio.bass;
 
-  // 频谱质心 → 色相
-  const total = mood.bassAvg + mood.midAvg + mood.trebleAvg + 0.001;
-  const bw = mood.bassAvg / total;
-  const mw = mood.midAvg / total;
-  const tw = mood.trebleAvg / total;
-  // 低频 → 暖色(红橙 25), 中频 → 自然(青绿 155), 高频 → 冷色(蓝紫 255)
-  mood.targetHue = bw * 25 + mw * 155 + tw * 255;
+  // 频谱质心 → 色相（有音频时才更新，静默时保持上一次的色相）
+  const total = mood.bassAvg + mood.midAvg + mood.trebleAvg;
+  if (total > 0.01) {
+    const bw = mood.bassAvg / total;
+    const mw = mood.midAvg / total;
+    const tw = mood.trebleAvg / total;
+    // 低频 → 暖色(红橙 25), 中频 → 自然(青绿 155), 高频 → 冷色(蓝紫 255)
+    mood.targetHue = bw * 25 + mw * 155 + tw * 255;
+  }
 
   // 能量 → 饱和度/亮度
-  mood.targetSat = 0.5 + mood.energy * 0.5;
-  mood.targetLight = 0.4 + mood.energy * 0.25;
+  mood.targetSat = 0.55 + mood.energy * 0.45;
+  mood.targetLight = 0.5 + mood.energy * 0.25;
 
   // 平滑过渡（约2秒完成色相转换）
   mood.currentHue = lerpHue(mood.currentHue, mood.targetHue, 0.012);
@@ -165,7 +167,7 @@ function createBgParticles() {
 
     // 色相偏移：±0.12（约43度），让粒子在情绪色周围有微妙变化
     hues[i] = (Math.random() - 0.5) * 0.24;
-    sizes[i] = Math.random() * 2 + 0.5;
+    sizes[i] = Math.random() * 4 + 2;
 
     bgParticleData.push({
       x, y, z,
@@ -222,13 +224,13 @@ function createBgParticles() {
         float light = uMoodLight + uBass * 0.18 + uBeatPulse * 0.12;
         vColor = hsv2rgb(vec3(hue, sat, clamp(light, 0.0, 1.0)));
         // 距离越远透明度越低
-        vAlpha = 0.5 + uBeatPulse * 0.3;
+        vAlpha = 0.8 + uBeatPulse * 0.2;
 
         vec3 pos = position;
         float wave = sin(uTime * 0.5 + position.x * 0.01) * (3.0 + uMid * 20.0);
         pos += normalize(position) * wave * 0.1;
         vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = size * uPixelRatio * (1.0 + uBass * 3.0 + uBeatPulse * 1.5) * (300.0 / -mv.z);
+        gl_PointSize = max(3.0, size * uPixelRatio * (1.0 + uBass * 3.0 + uBeatPulse * 1.5) * (400.0 / -mv.z));
         gl_Position = projectionMatrix * mv;
       }
     `,

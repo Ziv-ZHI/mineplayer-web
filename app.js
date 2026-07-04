@@ -84,24 +84,25 @@ function fmtTime(s) {
 
 // ============ NCM 格式解码 ============
 // 网易云 .ncm 加密格式：AES-128-ECB + RC4 流加密
-// 解码后在浏览器内存中还原为原始 mp3/flac
-function u8ToWordArray(u8) {
-  const words = [];
-  for (let i = 0; i < u8.length; i++) {
-    words[i >>> 2] |= u8[i] << (24 - (i % 4) * 8);
-  }
-  return CryptoJS.lib.WordArray.create(words, u8.length);
+// 使用浏览器原生 Web Crypto API，无需外部依赖
+function hexToU8(hex) {
+  const arr = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return arr;
 }
-function wordArrayToU8(wa) {
-  const { words, sigBytes } = wa;
-  const u8 = new Uint8Array(sigBytes);
-  for (let i = 0; i < sigBytes; i++) {
-    u8[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
-  }
-  return u8;
+// AES-128-ECB 解密 + PKCS7 去填充（使用原生 Web Crypto API）
+async function aesECBDecrypt(keyHex, encBytes) {
+  const keyBytes = hexToU8(keyHex);
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-ECB' }, false, ['decrypt']);
+  const decBuf = await crypto.subtle.decrypt({ name: 'AES-ECB' }, key, encBytes);
+  const result = new Uint8Array(decBuf);
+  const padLen = result[result.length - 1];
+  if (padLen > 0 && padLen <= 16) return result.slice(0, result.length - padLen);
+  return result;
 }
 
 async function decodeNCM(file) {
+  if (!crypto.subtle) throw new Error('浏览器不支持 Web Crypto API，请使用 HTTPS 访问');
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -109,7 +110,7 @@ async function decodeNCM(file) {
 
   // 1. Magic "CTENFDAM"
   if (view.getUint32(0, true) !== 0x4E455443 || view.getUint32(4, true) !== 0x4D414446) {
-    throw new Error('非 NCM 格式');
+    throw new Error('非 NCM 格式（文件头不匹配）');
   }
   offset = 8;
 
@@ -120,14 +121,11 @@ async function decodeNCM(file) {
   offset += keyLen;
   for (let i = 0; i < encKey.length; i++) encKey[i] ^= 0x64;
 
-  const coreKey = CryptoJS.enc.Hex.parse('687A52416D736F356B496E6261785700');
-  const keyDecrypted = CryptoJS.AES.decrypt(u8ToWordArray(encKey), coreKey, {
-    mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7,
-  });
-  let keyResult = wordArrayToU8(keyDecrypted);
+  const keyDecrypted = await aesECBDecrypt('687A52416D736F356B496E6261785700', encKey);
   // 去掉 "neteasecloudmusic" 前缀（17 字节），剩余部分 XOR 0x63 得到 RC4 密钥
-  const rc4Key = keyResult.slice(17);
+  const rc4Key = keyDecrypted.slice(17);
   for (let i = 0; i < rc4Key.length; i++) rc4Key[i] ^= 0x63;
+  if (rc4Key.length === 0) throw new Error('RC4 密钥解密失败');
 
   // 3. 元数据（可选，含歌曲名和格式信息）
   const metaLen = view.getUint32(offset, true);
@@ -138,14 +136,10 @@ async function decodeNCM(file) {
     const metaEnc = bytes.slice(offset, offset + metaLen);
     offset += metaLen;
     for (let i = 0; i < metaEnc.length; i++) metaEnc[i] ^= 0x63;
-
-    const metaKey = CryptoJS.enc.Hex.parse('2331346C6A6B5F215C5D2630553C2728');
-    const metaDecrypted = CryptoJS.AES.decrypt(u8ToWordArray(metaEnc), metaKey, {
-      mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7,
-    });
-    let metaStr = new TextDecoder().decode(wordArrayToU8(metaDecrypted));
-    if (metaStr.startsWith('music:')) metaStr = metaStr.slice(6);
     try {
+      const metaDecrypted = await aesECBDecrypt('2331346C6A6B5F215C5D2630553C2728', metaEnc);
+      let metaStr = new TextDecoder().decode(metaDecrypted);
+      if (metaStr.startsWith('music:')) metaStr = metaStr.slice(6);
       const meta = JSON.parse(metaStr);
       if (meta.musicName) songName = meta.musicName;
       if (meta.format) format = meta.format;
@@ -164,7 +158,6 @@ async function decodeNCM(file) {
 
   // 6. RC4 解密音频数据
   const audioData = bytes.slice(offset);
-
   // 构建 RC4 密钥盒（KSA）
   const box = new Uint8Array(256);
   for (let i = 0; i < 256; i++) box[i] = i;
@@ -186,8 +179,18 @@ async function decodeNCM(file) {
     audioData[i] ^= stream[(i + 1) & 0xff];
   }
 
+  // 验证解密结果
+  const isMp3 = (audioData[0] === 0xFF && (audioData[1] === 0xFB || audioData[1] === 0xF3 || audioData[1] === 0xF2));
+  const isFlac = (audioData[0] === 0x66 && audioData[1] === 0x4C && audioData[2] === 0x61 && audioData[3] === 0x43);
+  if (!isMp3 && !isFlac) {
+    // 尝试通过文件头自动检测格式
+    if (isFlac) format = 'flac';
+    else if (!isMp3) console.warn('NCM 解密后音频头异常，可能解码不完整');
+  }
+
   const mime = format === 'flac' ? 'audio/flac' : 'audio/mpeg';
   const blob = new Blob([audioData], { type: mime });
+  console.log('NCM 解码成功:', songName, '格式:', format, '大小:', blob.size);
   return { name: songName, blob, format };
 }
 
@@ -698,19 +701,27 @@ async function addFiles(files) {
   const normalFiles = files.filter(f => !f.name.toLowerCase().endsWith('.ncm'));
 
   // 解码 NCM 文件
+  let ncmSuccess = 0, ncmFail = 0;
   for (const f of ncmFiles) {
     const baseName = f.name.replace(/\.ncm$/i, '');
-    showToast('正在解码 ' + baseName + ' ...', 30000);
+    showToast('正在解码 ' + baseName + ' ...', 60000);
     try {
       const decoded = await decodeNCM(f);
       const h = hashStr(decoded.name);
       state.playlist.push({ name: decoded.name, url: URL.createObjectURL(decoded.blob), hue: h % 360 });
+      ncmSuccess++;
     } catch (e) {
-      showToast('解码失败: ' + baseName);
-      console.error('NCM decode error:', e);
+      ncmFail++;
+      console.error('NCM decode error for', f.name, ':', e);
+      showToast('解码失败: ' + baseName + '\n' + e.message, 5000);
+      await new Promise(r => setTimeout(r, 5200)); // 等用户看到错误
     }
   }
-  if (ncmFiles.length > 0) showToast(ncmFiles.length > 1 ? `已解码 ${ncmFiles.length} 首 NCM` : '解码完成', 1500);
+  if (ncmSuccess > 0 && ncmFail === 0) {
+    showToast(ncmSuccess > 1 ? `已解码 ${ncmSuccess} 首 NCM` : '解码完成', 1500);
+  } else if (ncmSuccess > 0 && ncmFail > 0) {
+    showToast(`成功 ${ncmSuccess} 首，失败 ${ncmFail} 首`, 3000);
+  }
 
   // 普通音频文件直接导入
   for (const f of normalFiles) {
@@ -733,7 +744,7 @@ async function addFiles(files) {
     setTimeout(() => $('hint').classList.add('hidden'), 5000);
     playTrack(0);
   } else {
-    const added = ncmFiles.length + normalFiles.length;
+    const added = ncmSuccess + normalFiles.length;
     if (added > 1) showToast(`已添加 ${added} 首音乐`);
   }
 }

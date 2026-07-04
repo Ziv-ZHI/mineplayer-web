@@ -1,21 +1,21 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg: #0a0e14;
+  --bg: #06080c;
   --text: #e6edf3;
   --text2: #8b949e;
   --accent: #58a6ff;
-  --glass: rgba(22, 27, 34, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass: rgba(16, 20, 28, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.08);
 }
 
 body.light {
-  --bg: #e8eaed;
+  --bg: #d8dde3;
   --text: #1f2328;
   --text2: #656d76;
   --accent: #0969da;
-  --glass: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.06);
 }
 
 body {
@@ -27,15 +27,16 @@ body {
   transition: background 0.4s;
 }
 
-canvas {
+canvas#canvas {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
   z-index: 0;
-  cursor: pointer;
+  cursor: grab;
 }
+canvas#canvas:active { cursor: grabbing; }
 
-/* ===== 顶部条 ===== */
+/* ===== 顶部 ===== */
 #top-bar {
   position: fixed;
   top: 0; left: 0; right: 0;
@@ -65,7 +66,7 @@ canvas {
   cursor: pointer;
 }
 
-/* ===== 当前播放浮层 ===== */
+/* ===== 当前播放 ===== */
 #now-playing {
   position: fixed;
   top: 56px;
@@ -99,7 +100,7 @@ canvas {
   white-space: nowrap;
 }
 
-/* ===== 迷你控制条 ===== */
+/* ===== 迷你控制 ===== */
 #mini-controls {
   position: fixed;
   bottom: 24px;
@@ -134,12 +135,8 @@ canvas {
   align-items: center;
   transition: background 0.2s;
 }
-#mini-controls button:hover {
-  background: rgba(255,255,255,0.1);
-}
-body.light #mini-controls button:hover {
-  background: rgba(0,0,0,0.06);
-}
+#mini-controls button:hover { background: rgba(255,255,255,0.1); }
+body.light #mini-controls button:hover { background: rgba(0,0,0,0.06); }
 #btn-play {
   background: var(--accent) !important;
   color: #fff !important;
@@ -147,18 +144,14 @@ body.light #mini-controls button:hover {
   width: 42px !important; height: 42px !important;
 }
 #btn-play:hover { opacity: 0.85; }
-
 #progress-track {
   width: 120px;
   height: 3px;
   background: rgba(255,255,255,0.15);
   border-radius: 2px;
   cursor: pointer;
-  position: relative;
 }
-body.light #progress-track {
-  background: rgba(0,0,0,0.1);
-}
+body.light #progress-track { background: rgba(0,0,0,0.1); }
 #progress-fill {
   height: 100%;
   background: var(--accent);
@@ -174,13 +167,9 @@ body.light #progress-track {
   transform: translate(-50%, -50%);
   z-index: 5;
   text-align: center;
-  pointer-events: auto;
   transition: opacity 0.4s;
 }
-#drop-zone.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
+#drop-zone.hidden { opacity: 0; pointer-events: none; }
 #drop-inner {
   display: flex;
   flex-direction: column;
@@ -197,10 +186,7 @@ body.light #progress-track {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 }
-#drop-inner p {
-  font-size: 14px;
-  color: var(--text2);
-}
+#drop-inner p { font-size: 14px; color: var(--text2); }
 #btn-load {
   display: inline-block;
   padding: 8px 24px;
@@ -212,29 +198,27 @@ body.light #progress-track {
 }
 #file-input { display: none; }
 
-/* ===== 音量浮窗 ===== */
-#vol-float {
+/* ===== 提示 ===== */
+#hint {
   position: fixed;
-  right: 20px;
   bottom: 80px;
-  z-index: 10;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  font-size: 11px;
+  color: var(--text2);
   background: var(--glass);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  padding: 12px 8px;
-  transition: opacity 0.3s;
+  border-radius: 12px;
+  padding: 4px 14px;
+  opacity: 0.7;
+  pointer-events: none;
+  transition: opacity 0.4s;
 }
-#vol-float.hidden { opacity: 0; pointer-events: none; }
-#volume-bar {
-  -webkit-appearance: slider-vertical;
-  writing-mode: bt-lr;
-  width: 4px;
-  height: 80px;
-  background: rgba(255,255,255,0.15);
-}
+#hint.hidden { opacity: 0; }
 
-/* ===== 全局拖拽高亮 ===== */
+/* ===== 拖拽高亮 ===== */
 body.drag-active::after {
   content: '';
   position: fixed;

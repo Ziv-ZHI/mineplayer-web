@@ -1,135 +1,398 @@
 // ============ 状态 ============
 const state = {
-  audioCtx: null,
-  analyser: null,
-  source: null,
-  audio: new Audio(),
-  playlist: [],       // 每首歌 { name, url, hue, x, y, vx, vy, radius, pulsePhase }
+  playlist: [],
   currentIndex: -1,
   isPlaying: false,
   mode: 'loop',
   volume: 0.8,
+  audioCtx: null,
+  analyser: null,
+  source: null,
   dataArray: null,
-  bgParticles: [],    // 背景装饰粒子
+  audio: new Audio(),
   time: 0,
 };
 
-// ============ DOM ============
-const $ = id => document.getElementById(id);
-const canvas = $('canvas');
-const ctx = canvas.getContext('2d');
-const audio = state.audio;
-
 // ============ 工具 ============
+const $ = id => document.getElementById(id);
 function hashStr(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
   return Math.abs(h);
 }
-
 function fmtTime(s) {
   if (!s || isNaN(s)) return '0:00';
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
-
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+function hslColor(h, s, l, a = 1) {
+  return `hsla(${h}, ${s}%, ${l}%, ${a})`;
 }
 
-// ============ 初始化 ============
-function init() {
-  resize();
-  window.addEventListener('resize', resize);
-  audio.volume = state.volume;
+// ============ Three.js 场景 ============
+let scene, camera, renderer, raycaster, mouse;
+let songOrbs = [];        // 每首歌的 3D 球体
+let bgParticles;          // 背景粒子云
+let bgParticleData;       // 粒子原始数据
+let freqBars;             // 频谱条
+let glowSprite;           // 当前歌曲辉光
 
-  initBgParticles();
-  bindEvents();
-  loop();
+// 相机控制
+const camCtrl = {
+  azimuth: 0,       // 水平角
+  polar: Math.PI / 2, // 垂直角
+  distance: 300,
+  targetAz: 0,
+  targetPolar: Math.PI / 2,
+  targetDist: 300,
+  isDragging: false,
+  lastX: 0,
+  lastY: 0,
+  autoRotate: 0.0015,
+};
+
+// ============ 初始化 Three.js ============
+function initThree() {
+  const canvas = $('canvas');
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x06080c, 0.0015);
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  updateCamera();
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  // 光照
+  scene.add(new THREE.AmbientLight(0x404060, 0.5));
+  const pl = new THREE.PointLight(0x6080ff, 1, 500);
+  pl.position.set(0, 0, 0);
+  scene.add(pl);
+
+  // 背景粒子云
+  createBgParticles();
+
+  // 频谱环（围绕当前歌曲）
+  createFreqBars();
+
+  window.addEventListener('resize', onResize);
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup', onMouseUp);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd);
+  canvas.addEventListener('click', onCanvasClick);
 }
 
-function initBgParticles() {
-  state.bgParticles = [];
-  for (let i = 0; i < 120; i++) {
-    state.bgParticles.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      r: Math.random() * 1.2 + 0.3,
-      vx: (Math.random() - 0.5) * 0.15,
-      vy: (Math.random() - 0.5) * 0.15,
-      alpha: Math.random() * 0.3 + 0.1,
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ============ 背景粒子 ============
+function createBgParticles() {
+  const count = 800;
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+
+  bgParticleData = [];
+
+  for (let i = 0; i < count; i++) {
+    // 球形分布
+    const r = 200 + Math.random() * 600;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+
+    const hue = 180 + Math.random() * 120;
+    const c = new THREE.Color().setHSL(hue / 360, 0.7, 0.6);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+
+    sizes[i] = Math.random() * 2 + 0.5;
+
+    bgParticleData.push({
+      x, y, z,
+      baseR: r,
+      vx: (Math.random() - 0.5) * 0.02,
+      vy: (Math.random() - 0.5) * 0.02,
+      vz: (Math.random() - 0.5) * 0.02,
+      phase: Math.random() * Math.PI * 2,
+      size: sizes[i],
     });
   }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uBass: { value: 0 },
+      uMid: { value: 0 },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+    },
+    vertexShader: `
+      attribute float size;
+      attribute vec3 color;
+      varying vec3 vColor;
+      uniform float uTime;
+      uniform float uBass;
+      uniform float uMid;
+      uniform float uPixelRatio;
+      void main() {
+        vColor = color;
+        vec3 pos = position;
+        float wave = sin(uTime * 0.5 + position.x * 0.01) * (3.0 + uMid * 20.0);
+        pos += normalize(position) * wave * 0.1;
+        vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+        gl_PointSize = size * uPixelRatio * (1.0 + uBass * 3.0) * (300.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float alpha = smoothstep(0.5, 0.0, d);
+        gl_FragColor = vec4(vColor, alpha * 0.8);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  bgParticles = new THREE.Points(geo, mat);
+  scene.add(bgParticles);
 }
 
-// ============ 事件 ============
-function bindEvents() {
-  // 画布点击 — 检测是否点中某个粒子球
-  canvas.addEventListener('click', onCanvasClick);
+// ============ 频谱环 ============
+function createFreqBars() {
+  freqBars = new THREE.Group();
+  const bands = 64;
+  for (let i = 0; i < bands; i++) {
+    const angle = (i / bands) * Math.PI * 2;
+    const geo = new THREE.BoxGeometry(1.5, 1, 1.5);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x58a6ff,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+    });
+    const bar = new THREE.Mesh(geo, mat);
+    bar.userData = { angle, index: i, baseH: 1 };
+    freqBars.add(bar);
+  }
+  freqBars.visible = false;
+  scene.add(freqBars);
+}
 
-  // 控制按钮
-  $('btn-play').addEventListener('click', togglePlay);
-  $('btn-prev').addEventListener('click', playPrev);
-  $('btn-next').addEventListener('click', playNext);
-  $('btn-mode').addEventListener('click', toggleMode);
+// ============ 歌曲球体 ============
+function createSongOrb(track, index) {
+  const hue = track.hue;
+  const color = new THREE.Color().setHSL(hue / 360, 0.75, 0.55);
 
-  // 进度条
-  $('progress-track').addEventListener('click', e => {
-    if (!audio.duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    audio.currentTime = pct * audio.duration;
+  // 主体球
+  const geo = new THREE.IcosahedronGeometry(12, 2);
+  const mat = new THREE.MeshPhongMaterial({
+    color: color,
+    emissive: color,
+    emissiveIntensity: 0.4,
+    shininess: 80,
+    transparent: true,
+    opacity: 0.85,
   });
+  const mesh = new THREE.Mesh(geo, mat);
 
-  // 音量
-  $('volume-bar').addEventListener('input', () => {
-    state.volume = $('volume-bar').value / 100;
-    audio.volume = state.volume;
+  // 随机 3D 位置
+  const r = 80 + Math.random() * 120;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  mesh.position.set(
+    r * Math.sin(phi) * Math.cos(theta),
+    r * Math.sin(phi) * Math.sin(theta),
+    r * Math.cos(phi)
+  );
+
+  // 线框外壳
+  const wireGeo = new THREE.IcosahedronGeometry(14, 1);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: color,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.2,
   });
+  const wire = new THREE.Mesh(wireGeo, wireMat);
+  mesh.add(wire);
 
-  // 主题
-  $('btn-theme').addEventListener('click', () => {
-    document.body.classList.toggle('light');
-    $('btn-theme').textContent = document.body.classList.contains('light') ? '\u{1F319}' : '\u2600';
+  // 光晕 sprite
+  const haloTex = createHaloTexture(color);
+  const haloMat = new THREE.SpriteMaterial({
+    map: haloTex,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
+  const halo = new THREE.Sprite(haloMat);
+  halo.scale.set(50, 50, 1);
+  mesh.add(halo);
 
-  // 文件选择
-  $('file-input').addEventListener('change', e => addFiles([...e.target.files]));
+  mesh.userData = {
+    track,
+    index,
+    hue,
+    basePos: mesh.position.clone(),
+    floatPhase: Math.random() * Math.PI * 2,
+    rotSpeed: { x: (Math.random() - 0.5) * 0.01, y: (Math.random() - 0.5) * 0.01 },
+    vel: new THREE.Vector3(
+      (Math.random() - 0.5) * 0.15,
+      (Math.random() - 0.5) * 0.15,
+      (Math.random() - 0.5) * 0.15
+    ),
+    wire,
+    halo,
+    baseEmissive: 0.4,
+  };
 
-  // 全局拖拽
-  window.addEventListener('dragover', e => {
+  scene.add(mesh);
+  songOrbs.push(mesh);
+  return mesh;
+}
+
+function createHaloTexture(color) {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const cx = c.getContext('2d');
+  const grad = cx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const hsl = `hsla(${Math.round(color.getHSL({}).h * 360)}, 70%, 60%, `;
+  grad.addColorStop(0, hsl + '0.6)');
+  grad.addColorStop(0.4, hsl + '0.2)');
+  grad.addColorStop(1, hsl + '0)');
+  cx.fillStyle = grad;
+  cx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  return tex;
+}
+
+// ============ 相机控制 ============
+function updateCamera() {
+  const x = camCtrl.distance * Math.sin(camCtrl.polar) * Math.cos(camCtrl.azimuth);
+  const y = camCtrl.distance * Math.cos(camCtrl.polar);
+  const z = camCtrl.distance * Math.sin(camCtrl.polar) * Math.sin(camCtrl.azimuth);
+  camera.position.set(x, y, z);
+  camera.lookAt(0, 0, 0);
+}
+
+function onMouseDown(e) {
+  camCtrl.isDragging = true;
+  camCtrl.lastX = e.clientX;
+  camCtrl.lastY = e.clientY;
+}
+function onMouseMove(e) {
+  if (!camCtrl.isDragging) return;
+  const dx = e.clientX - camCtrl.lastX;
+  const dy = e.clientY - camCtrl.lastY;
+  camCtrl.targetAzimuth -= dx * 0.005;
+  camCtrl.targetPolar -= dy * 0.005;
+  camCtrl.targetPolar = Math.max(0.15, Math.min(Math.PI - 0.15, camCtrl.targetPolar));
+  camCtrl.lastX = e.clientX;
+  camCtrl.lastY = e.clientY;
+}
+function onMouseUp() {
+  camCtrl.isDragging = false;
+}
+
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
     e.preventDefault();
-    document.body.classList.add('drag-active');
-  });
-  window.addEventListener('dragleave', e => {
-    if (e.clientX === 0 && e.clientY === 0) document.body.classList.remove('drag-active');
-  });
-  window.addEventListener('drop', e => {
-    e.preventDefault();
-    document.body.classList.remove('drag-active');
-    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
-    if (files.length) addFiles(files);
-  });
+    camCtrl.isDragging = true;
+    camCtrl.lastX = e.touches[0].clientX;
+    camCtrl.lastY = e.touches[0].clientY;
+  }
+}
+function onTouchMove(e) {
+  if (!camCtrl.isDragging || e.touches.length !== 1) return;
+  e.preventDefault();
+  const dx = e.touches[0].clientX - camCtrl.lastX;
+  const dy = e.touches[0].clientY - camCtrl.lastY;
+  camCtrl.targetAzimuth -= dx * 0.005;
+  camCtrl.targetPolar -= dy * 0.005;
+  camCtrl.targetPolar = Math.max(0.15, Math.min(Math.PI - 0.15, camCtrl.targetPolar));
+  camCtrl.lastX = e.touches[0].clientX;
+  camCtrl.lastY = e.touches[0].clientY;
+}
+function onTouchEnd() {
+  camCtrl.isDragging = false;
+}
 
-  // 音频事件
-  audio.addEventListener('timeupdate', updateProgress);
-  audio.addEventListener('ended', onEnded);
+function onWheel(e) {
+  e.preventDefault();
+  camCtrl.targetDist += e.deltaY * 0.5;
+  camCtrl.targetDist = Math.max(80, Math.min(600, camCtrl.targetDist));
 }
 
 function onCanvasClick(e) {
-  const mx = e.clientX, my = e.clientY;
-  // 从后往前检测（上层优先）
-  for (let i = state.playlist.length - 1; i >= 0; i--) {
-    const t = state.playlist[i];
-    const dx = mx - t.x, dy = my - t.y;
-    const hitR = t.radius + 8;
-    if (dx * dx + dy * dy < hitR * hitR) {
-      playTrack(i);
-      return;
-    }
+  // 拖动后不触发 click
+  if (Math.abs(e.clientX - camCtrl.lastX) > 5 || Math.abs(e.clientY - camCtrl.lastY) > 5) return;
+
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(songOrbs, false);
+  if (hits.length > 0) {
+    const idx = hits[0].object.userData.index;
+    playTrack(idx);
   }
+}
+
+// ============ 音频 ============
+function initAudioAnalyser() {
+  if (state.audioCtx) state.audioCtx.close();
+  state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  state.analyser = state.audioCtx.createAnalyser();
+  state.analyser.fftSize = 512;
+  state.source = state.audioCtx.createMediaElementSource(state.audio);
+  state.source.connect(state.analyser);
+  state.analyser.connect(state.audioCtx.destination);
+  state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
+}
+
+function getAudioData() {
+  if (!state.analyser || !state.isPlaying) return { bass: 0, mid: 0, treble: 0, freq: new Uint8Array(0) };
+  state.analyser.getByteFrequencyData(state.dataArray);
+  const len = state.dataArray.length;
+  let bass = 0, mid = 0, treble = 0;
+  const bEnd = Math.floor(len * 0.1);
+  const mEnd = Math.floor(len * 0.4);
+  for (let i = 0; i < bEnd; i++) bass += state.dataArray[i];
+  for (let i = bEnd; i < mEnd; i++) mid += state.dataArray[i];
+  for (let i = mEnd; i < len; i++) treble += state.dataArray[i];
+  bass = bass / bEnd / 255;
+  mid = mid / (mEnd - bEnd) / 255;
+  treble = treble / (len - mEnd) / 255;
+  return { bass, mid, treble, freq: state.dataArray };
 }
 
 // ============ 文件 ============
@@ -142,26 +405,29 @@ function addFiles(files) {
       name,
       url,
       hue: h % 360,
-      x: Math.random() * (canvas.width - 200) + 100,
-      y: Math.random() * (canvas.height - 200) + 100,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      radius: 18,
-      pulsePhase: Math.random() * Math.PI * 2,
     });
   });
   $('drop-zone').classList.add('hidden');
+
+  // 创建 3D 球体
+  state.playlist.forEach((t, i) => {
+    if (!songOrbs[i]) createSongOrb(t, i);
+  });
+
+  $('hint').classList.remove('hidden');
+  setTimeout(() => $('hint').classList.add('hidden'), 5000);
+
   if (state.currentIndex === -1) playTrack(0);
 }
 
-// ============ 播放 ============
+// ============ 播放控制 ============
 function playTrack(i) {
   if (i < 0 || i >= state.playlist.length) return;
   state.currentIndex = i;
   const t = state.playlist[i];
-  audio.src = t.url;
-  audio.load();
-  audio.play();
+  state.audio.src = t.url;
+  state.audio.load();
+  state.audio.play();
   state.isPlaying = true;
   $('btn-play').textContent = '\u23F8';
   $('mini-controls').classList.remove('hidden');
@@ -171,15 +437,12 @@ function playTrack(i) {
 }
 
 function togglePlay() {
-  if (state.currentIndex === -1 && state.playlist.length > 0) {
-    playTrack(0);
-    return;
-  }
+  if (state.currentIndex === -1 && state.playlist.length > 0) { playTrack(0); return; }
   if (state.isPlaying) {
-    audio.pause();
+    state.audio.pause();
     $('btn-play').textContent = '\u25B6';
   } else {
-    audio.play();
+    state.audio.play();
     $('btn-play').textContent = '\u23F8';
   }
   state.isPlaying = !state.isPlaying;
@@ -208,232 +471,171 @@ function toggleMode() {
 }
 
 function onEnded() {
-  if (state.mode === 'single') {
-    audio.currentTime = 0;
-    audio.play();
-  } else {
-    playNext();
-  }
+  if (state.mode === 'single') { state.audio.currentTime = 0; state.audio.play(); }
+  else playNext();
 }
 
 function updateProgress() {
-  if (!audio.duration) return;
-  const pct = (audio.currentTime / audio.duration) * 100;
+  if (!state.audio.duration) return;
+  const pct = (state.audio.currentTime / state.audio.duration) * 100;
   $('progress-fill').style.width = pct + '%';
-  $('np-time').textContent = fmtTime(audio.currentTime) + ' / ' + fmtTime(audio.duration);
+  $('np-time').textContent = fmtTime(state.audio.currentTime) + ' / ' + fmtTime(state.audio.duration);
 }
 
-// ============ 音频分析 ============
-function initAudioAnalyser() {
-  if (state.audioCtx) state.audioCtx.close();
-  state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  state.analyser = state.audioCtx.createAnalyser();
-  state.analyser.fftSize = 512;
-  state.source = state.audioCtx.createMediaElementSource(audio);
-  state.source.connect(state.analyser);
-  state.analyser.connect(state.audioCtx.destination);
-  state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
-}
-
-function getAudioData() {
-  if (!state.analyser || !state.isPlaying) return { bass: 0, mid: 0, treble: 0, freq: [] };
-  state.analyser.getByteFrequencyData(state.dataArray);
-  const len = state.dataArray.length;
-  let bass = 0, mid = 0, treble = 0;
-  const bassEnd = Math.floor(len * 0.1);
-  const midEnd = Math.floor(len * 0.4);
-  for (let i = 0; i < bassEnd; i++) bass += state.dataArray[i];
-  for (let i = bassEnd; i < midEnd; i++) mid += state.dataArray[i];
-  for (let i = midEnd; i < len; i++) treble += state.dataArray[i];
-  bass = bass / bassEnd / 255;
-  mid = mid / (midEnd - bassEnd) / 255;
-  treble = treble / (len - midEnd) / 255;
-  return { bass, mid, treble, freq: state.dataArray };
-}
-
-// ============ 主渲染循环 ============
-function loop() {
+// ============ 主循环 ============
+function animate() {
+  requestAnimationFrame(animate);
   state.time += 0.016;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 渐变背景
-  drawBgGradient();
+  // 相机缓动
+  if (!camCtrl.isDragging) {
+    camCtrl.targetAzimuth += camCtrl.autoRotate;
+  }
+  camCtrl.azimuth += (camCtrl.targetAzimuth - camCtrl.azimuth) * 0.08;
+  camCtrl.polar += (camCtrl.targetPolar - camCtrl.polar) * 0.08;
+  camCtrl.distance += (camCtrl.targetDist - camCtrl.distance) * 0.08;
+  updateCamera();
 
   const audio = getAudioData();
 
   // 背景粒子
-  drawBgParticles(audio);
+  if (bgParticles) {
+    bgParticles.material.uniforms.uTime.value = state.time;
+    bgParticles.material.uniforms.uBass.value = audio.bass;
+    bgParticles.material.uniforms.uMid.value = audio.mid;
+    bgParticles.rotation.y = state.time * 0.02;
+  }
 
-  // 歌曲粒子球
-  drawSongOrbs(audio);
-
-  requestAnimationFrame(loop);
-}
-
-function drawBgGradient() {
-  const hueBase = state.currentIndex >= 0 ? state.playlist[state.currentIndex].hue : 210;
-  const grad = ctx.createRadialGradient(
-    canvas.width / 2, canvas.height / 2, 0,
-    canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 1.5
-  );
-  const isLight = document.body.classList.contains('light');
-  grad.addColorStop(0, `hsla(${hueBase}, 60%, ${isLight ? 90 : 8}%, 1)`);
-  grad.addColorStop(1, `hsla(${hueBase + 40}, 40%, ${isLight ? 80 : 4}%, 1)`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-}
-
-function drawBgParticles(audio) {
-  const isLight = document.body.classList.contains('light');
-  state.bgParticles.forEach(p => {
-    p.x += p.vx + Math.sin(state.time + p.r) * 0.1;
-    p.y += p.vy;
-    if (p.x < 0) p.x = canvas.width;
-    if (p.x > canvas.width) p.x = 0;
-    if (p.y < 0) p.y = canvas.height;
-    if (p.y > canvas.height) p.y = 0;
-
-    const r = p.r * (1 + audio.bass * 1.5);
-    const a = p.alpha * (1 + audio.mid * 0.5);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = isLight
-      ? `rgba(100, 120, 140, ${a})`
-      : `rgba(180, 200, 255, ${a})`;
-    ctx.fill();
-  });
-}
-
-function drawSongOrbs(audio) {
-  state.playlist.forEach((t, i) => {
+  // 歌曲球体
+  songOrbs.forEach((orb, i) => {
+    const ud = orb.userData;
     const isCurrent = i === state.currentIndex;
     const isPlaying = isCurrent && state.isPlaying;
 
-    // 粒子运动
-    t.pulsePhase += 0.03;
+    // 漂浮运动
+    ud.floatPhase += 0.015;
 
     if (isCurrent) {
-      // 当前歌曲：被吸引到中心区域，半径随音频脉动
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-      t.vx += (cx - t.x) * 0.008;
-      t.vy += (cy - t.y) * 0.008;
-      t.vx *= 0.92;
-      t.vy *= 0.92;
-      t.radius = 50 + audio.bass * 80 + Math.sin(t.pulsePhase) * 8;
+      // 当前歌曲：吸引到中心
+      ud.vel.x += (0 - orb.position.x) * 0.003;
+      ud.vel.y += (0 - orb.position.y) * 0.003;
+      ud.vel.z += (0 - orb.position.z) * 0.003;
+      ud.vel.multiplyScalar(0.94);
+
+      // 脉动缩放
+      const scale = 1.5 + audio.bass * 2.0 + Math.sin(ud.floatPhase) * 0.1;
+      orb.scale.setScalar(scale);
+
+      // 发光强度
+      orb.material.emissiveIntensity = ud.baseEmissive + audio.mid * 1.5;
+      ud.wire.material.opacity = 0.3 + audio.treble * 0.5;
+      ud.halo.material.opacity = 0.4 + audio.bass * 0.5;
+      ud.halo.scale.setScalar(50 + audio.bass * 80);
+
+      // 频谱环
+      freqBars.visible = true;
+      const ringR = 22 * scale;
+      freqBars.children.forEach((bar, bi) => {
+        const fi = Math.floor((bi / freqBars.children.length) * (audio.freq.length * 0.7));
+        const v = audio.freq.length > 0 ? audio.freq[fi] / 255 : 0;
+        const h = 2 + v * 30;
+        bar.scale.y = h;
+        const angle = bar.userData.angle + state.time * 0.3;
+        bar.position.set(
+          orb.position.x + Math.cos(angle) * ringR,
+          orb.position.y + Math.sin(angle) * ringR,
+          orb.position.z
+        );
+        bar.lookAt(camera.position);
+        const hue = (ud.hue + bi * 3) % 360;
+        bar.material.color.setHSL(hue / 360, 0.8, 0.5 + v * 0.3);
+        bar.material.opacity = 0.4 + v * 0.5;
+      });
     } else {
-      // 其他歌曲：自由漂浮
-      t.radius = 18 + Math.sin(t.pulsePhase) * 3;
-      // 轻微排斥（避免重叠）
-      for (let j = 0; j < state.playlist.length; j++) {
+      // 非当前歌曲：自由漂浮 + 互斥
+      for (let j = 0; j < songOrbs.length; j++) {
         if (j === i) continue;
-        const o = state.playlist[j];
-        const dx = t.x - o.x, dy = t.y - o.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        const minD = 80;
-        if (d < minD && d > 0) {
-          t.vx += (dx / d) * 0.05;
-          t.vy += (dy / d) * 0.05;
+        const other = songOrbs[j];
+        const dx = orb.position.x - other.position.x;
+        const dy = orb.position.y - other.position.y;
+        const dz = orb.position.z - other.position.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < 2500 && d2 > 0.01) {
+          const d = Math.sqrt(d2);
+          const f = (50 - d) * 0.0008;
+          ud.vel.x += (dx / d) * f;
+          ud.vel.y += (dy / d) * f;
+          ud.vel.z += (dz / d) * f;
         }
       }
-      t.vx *= 0.98;
-      t.vy *= 0.98;
+
+      // 向原点微弱回拉
+      ud.vel.x += (ud.basePos.x - orb.position.x) * 0.0005;
+      ud.vel.y += (ud.basePos.y - orb.position.y) * 0.0005;
+      ud.vel.z += (ud.basePos.z - orb.position.z) * 0.0005;
+      ud.vel.multiplyScalar(0.98);
+
+      // 音频微反应
+      const scale = 1 + audio.bass * 0.3;
+      orb.scale.setScalar(scale);
+      orb.material.emissiveIntensity = ud.baseEmissive + audio.bass * 0.2;
+      ud.halo.material.opacity = 0.3 + audio.bass * 0.15;
     }
 
-    t.x += t.vx;
-    t.y += t.vy;
+    orb.position.add(ud.vel);
 
-    // 边界软约束
-    const margin = t.radius + 20;
-    if (t.x < margin) t.vx += 0.3;
-    if (t.x > canvas.width - margin) t.vx -= 0.3;
-    if (t.y < margin) t.vy += 0.3;
-    if (t.y > canvas.height - margin) t.vy -= 0.3;
+    // 自转
+    orb.rotation.x += ud.rotSpeed.x;
+    orb.rotation.y += ud.rotSpeed.y;
+    ud.wire.rotation.x -= ud.rotSpeed.x * 0.5;
+    ud.wire.rotation.y -= ud.rotSpeed.y * 0.5;
+  });
 
-    // === 绘制粒子球 ===
-    const hue = t.hue;
-    const r = t.radius;
+  renderer.render(scene, camera);
+}
 
-    // 外层辉光
-    if (isCurrent) {
-      const glowR = r * 2.5 + audio.bass * 100;
-      const glow = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, glowR);
-      glow.addColorStop(0, `hsla(${hue}, 80%, 65%, ${0.4 + audio.bass * 0.3})`);
-      glow.addColorStop(0.5, `hsla(${hue}, 70%, 50%, 0.1)`);
-      glow.addColorStop(1, `hsla(${hue}, 60%, 40%, 0)`);
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, glowR, 0, Math.PI * 2);
-      ctx.fill();
-    }
+// ============ 事件绑定 ============
+function bindEvents() {
+  $('btn-play').addEventListener('click', togglePlay);
+  $('btn-prev').addEventListener('click', playPrev);
+  $('btn-next').addEventListener('click', playNext);
+  $('btn-mode').addEventListener('click', toggleMode);
 
-    // 频谱环（仅当前播放）
-    if (isPlaying && audio.freq.length > 0) {
-      const bands = 64;
-      const ringR = r + 12;
-      for (let b = 0; b < bands; b++) {
-        const fi = Math.floor((b / bands) * (audio.freq.length * 0.7));
-        const v = audio.freq[fi] / 255;
-        const barH = v * 40 + 2;
-        const angle = (b / bands) * Math.PI * 2 - Math.PI / 2;
-        const x1 = t.x + Math.cos(angle) * ringR;
-        const y1 = t.y + Math.sin(angle) * ringR;
-        const x2 = t.x + Math.cos(angle) * (ringR + barH);
-        const y2 = t.y + Math.sin(angle) * (ringR + barH);
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.strokeStyle = `hsla(${hue + b * 2}, 80%, ${60 + v * 30}%, ${0.6 + v * 0.4})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
+  $('progress-track').addEventListener('click', e => {
+    if (!state.audio.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    state.audio.currentTime = pct * state.audio.duration;
+  });
 
-    // 主体球
-    const ballGrad = ctx.createRadialGradient(
-      t.x - r * 0.3, t.y - r * 0.3, 0,
-      t.x, t.y, r
-    );
-    const lightness = isCurrent ? 60 : 45;
-    ballGrad.addColorStop(0, `hsla(${hue}, 80%, ${lightness + 20}%, 0.95)`);
-    ballGrad.addColorStop(0.6, `hsla(${hue}, 70%, ${lightness}%, 0.8)`);
-    ballGrad.addColorStop(1, `hsla(${hue}, 60%, ${lightness - 15}%, 0.3)`);
-    ctx.fillStyle = ballGrad;
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 高光
-    ctx.beginPath();
-    ctx.arc(t.x - r * 0.35, t.y - r * 0.35, r * 0.25, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 255, 255, ${isCurrent ? 0.3 : 0.15})`;
-    ctx.fill();
-
-    // 歌曲名
-    ctx.fillStyle = `rgba(255,255,255,${isCurrent ? 0.95 : 0.5})`;
-    ctx.font = `${isCurrent ? '600 13px' : '400 11px'} -apple-system, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    // 截断长名
-    let name = t.name;
-    const maxW = isCurrent ? 200 : 120;
-    if (ctx.measureText(name).width > maxW) {
-      while (ctx.measureText(name + '...').width > maxW && name.length > 3) name = name.slice(0, -1);
-      name += '...';
-    }
-    ctx.fillText(name, t.x, t.y + r + (isCurrent ? 24 : 16));
-
-    // 播放指示
-    if (isCurrent && state.isPlaying) {
-      const dotY = t.y - r - 18;
-      const pulse = Math.sin(state.time * 4) * 2;
-      ctx.beginPath();
-      ctx.arc(t.x, dotY, 3 + pulse, 0, Math.PI * 2);
-      ctx.fillStyle = `hsla(${hue}, 80%, 70%, 0.9)`;
-      ctx.fill();
+  $('btn-theme').addEventListener('click', () => {
+    document.body.classList.toggle('light');
+    $('btn-theme').textContent = document.body.classList.contains('light') ? '\u{1F319}' : '\u2600';
+    // 更新雾色
+    if (scene) {
+      scene.fog.color.set(document.body.classList.contains('light') ? 0xd8dde3 : 0x06080c);
     }
   });
+
+  $('file-input').addEventListener('change', e => addFiles([...e.target.files]));
+
+  window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-active'); });
+  window.addEventListener('dragleave', e => {
+    if (e.clientX === 0 && e.clientY === 0) document.body.classList.remove('drag-active');
+  });
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    document.body.classList.remove('drag-active');
+    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
+    if (files.length) addFiles(files);
+  });
+
+  state.audio.addEventListener('timeupdate', updateProgress);
+  state.audio.addEventListener('ended', onEnded);
+  state.audio.volume = state.volume;
 }
 
 // ============ 启动 ============
-init();
+initThree();
+bindEvents();
+animate();

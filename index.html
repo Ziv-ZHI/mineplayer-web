@@ -9,13 +9,13 @@
 <body>
   <canvas id="canvas"></canvas>
 
-  <!-- 顶部最小信息条 -->
+  <!-- 顶部 -->
   <div id="top-bar">
     <span class="logo">MinePlayer</span>
     <button id="btn-theme" title="主题">&#9790;</button>
   </div>
 
-  <!-- 当前播放浮层（极简） -->
+  <!-- 当前播放浮层 -->
   <div id="now-playing" class="hidden">
     <span id="np-title"></span>
     <span id="np-time"></span>
@@ -32,7 +32,7 @@
     <button id="btn-mode">&#10227;</button>
   </div>
 
-  <!-- 加载入口 -->
+  <!-- 拖拽入口 -->
   <div id="drop-zone">
     <div id="drop-inner">
       <div id="drop-icon">&#9835;</div>
@@ -42,11 +42,10 @@
     </div>
   </div>
 
-  <!-- 音量（悬浮右下角） -->
-  <div id="vol-float" class="hidden">
-    <input type="range" id="volume-bar" min="0" max="100" value="80" step="1" orient="vertical">
-  </div>
+  <!-- 提示 -->
+  <div id="hint" class="hidden">拖拽旋转 &middot; 滚轮缩放 &middot; 点击粒子切歌</div>
 
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

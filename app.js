@@ -102,10 +102,10 @@ let freqBars;
 const camCtrl = {
   azimuth: 0,
   polar: Math.PI / 2.2,
-  distance: 400,
+  distance: 350,
   targetAzimuth: 0,
   targetPolar: Math.PI / 2.2,
-  targetDist: 400,
+  targetDist: 350,
   isDragging: false,
   lastX: 0,
   lastY: 0,
@@ -119,9 +119,9 @@ const camCtrl = {
 function initThree() {
   const canvas = $('canvas');
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x06080c, 0.0008);
+  scene.fog = new THREE.FogExp2(0x06080c, 0.00025);
 
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
   updateCamera();
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -132,7 +132,7 @@ function initThree() {
   mouse = new THREE.Vector2();
 
   scene.add(new THREE.AmbientLight(0x404060, 0.4));
-  const pl = new THREE.PointLight(0x6080ff, 1.5, 1000);
+  const pl = new THREE.PointLight(0x6080ff, 1.5, 5000);
   pl.position.set(0, 0, 0);
   scene.add(pl);
 
@@ -157,7 +157,7 @@ function onResize() {
 
 // ============ 背景粒子云（银河星空 + 情绪着色器） ============
 function createBgParticles() {
-  const count = 3500;
+  const count = 6000;
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
   const hues = new Float32Array(count);    // 每个粒子的色相偏移
@@ -171,19 +171,19 @@ function createBgParticles() {
     let x, y, z, r;
     const discRoll = Math.random();
 
-    if (discRoll < 0.75) {
-      // 盘面粒子（银河臂）
-      r = 150 + Math.random() * 900;
+    if (discRoll < 0.82) {
+      // 盘面粒子（银河臂）— 拉大半径形成宽阔环带
+      r = 200 + Math.random() * 2300;
       const theta = Math.random() * Math.PI * 2;
       // 螺旋臂偏移
-      const armOffset = Math.sin(theta * 2 + r * 0.003) * 40;
-      const thickness = (Math.random() - 0.5) * 80 * Math.exp(-r / 600);
+      const armOffset = Math.sin(theta * 2 + r * 0.002) * 60;
+      const thickness = (Math.random() - 0.5) * 120 * Math.exp(-r / 1200);
       x = r * Math.cos(theta) + armOffset * Math.cos(theta + 0.5);
       z = r * Math.sin(theta) + armOffset * Math.sin(theta + 0.5);
       y = thickness;
-    } else if (discRoll < 0.92) {
+    } else if (discRoll < 0.94) {
       // 球状晕（少量散布在球面）
-      r = 300 + Math.random() * 700;
+      r = 400 + Math.random() * 1600;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       x = r * Math.sin(phi) * Math.cos(theta);
@@ -285,7 +285,7 @@ function createBgParticles() {
         float wave = sin(uTime * 0.5 + position.x * 0.01) * (3.0 + uMid * 20.0);
         pos += normalize(position + vec3(0.001)) * wave * 0.08;
         vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = max(2.0, size * uPixelRatio * (1.0 + uBass * 2.5 + uBeatPulse * 1.2) * (500.0 / -mv.z));
+        gl_PointSize = max(2.0, size * uPixelRatio * (1.0 + uBass * 2.5 + uBeatPulse * 1.2) * (700.0 / -mv.z));
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -445,7 +445,7 @@ function onMouseMove(e) {
   const dy = e.clientY - camCtrl.lastY;
   camCtrl.targetAzimuth -= dx * 0.005;
   camCtrl.targetPolar -= dy * 0.005;
-  camCtrl.targetPolar = Math.max(0.15, Math.min(Math.PI - 0.15, camCtrl.targetPolar));
+  camCtrl.targetPolar = Math.max(0.05, Math.min(Math.PI - 0.05, camCtrl.targetPolar));
   camCtrl.lastX = e.clientX;
   camCtrl.lastY = e.clientY;
 }
@@ -487,7 +487,7 @@ function onTouchMove(e) {
     if (camCtrl.pinchDist > 0) {
       const delta = camCtrl.pinchDist - dist;
       camCtrl.targetDist += delta * 1.5;
-      camCtrl.targetDist = Math.max(40, Math.min(2000, camCtrl.targetDist));
+      camCtrl.targetDist = Math.max(30, Math.min(8000, camCtrl.targetDist));
     }
     camCtrl.pinchDist = dist;
   } else if (e.touches.length === 1 && camCtrl.isDragging) {
@@ -496,7 +496,7 @@ function onTouchMove(e) {
     const dy = e.touches[0].clientY - camCtrl.lastY;
     camCtrl.targetAzimuth -= dx * 0.005;
     camCtrl.targetPolar -= dy * 0.005;
-    camCtrl.targetPolar = Math.max(0.15, Math.min(Math.PI - 0.15, camCtrl.targetPolar));
+    camCtrl.targetPolar = Math.max(0.05, Math.min(Math.PI - 0.05, camCtrl.targetPolar));
     camCtrl.lastX = e.touches[0].clientX;
     camCtrl.lastY = e.touches[0].clientY;
   }
@@ -526,7 +526,7 @@ function onTouchEnd(e) {
 function onWheel(e) {
   e.preventDefault();
   camCtrl.targetDist += e.deltaY * 0.8;
-  camCtrl.targetDist = Math.max(40, Math.min(2000, camCtrl.targetDist));
+  camCtrl.targetDist = Math.max(30, Math.min(8000, camCtrl.targetDist));
 }
 
 function handleOrbClick(clientX, clientY) {

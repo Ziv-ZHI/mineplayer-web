@@ -48,10 +48,10 @@ canvas#canvas:active { cursor: grabbing; }
   pointer-events: none;
 }
 .logo {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--accent);
-  letter-spacing: 2px;
+  letter-spacing: 4px;
   text-shadow: 0 0 20px rgba(88,166,255,0.3);
 }
 #btn-theme {

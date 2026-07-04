@@ -13,6 +13,59 @@ const state = {
   time: 0,
 };
 
+// ============ 情绪检测系统 ============
+// 通过分析音频频谱特征，实时计算音乐"情绪色"
+// 频谱质心 → 色相（低频暖、中频自然、高频冷）
+// 整体能量 → 饱和度 + 亮度
+// 节拍突变 → 闪烁脉冲
+const mood = {
+  bassAvg: 0, midAvg: 0, trebleAvg: 0,
+  energy: 0,
+  targetHue: 220, currentHue: 220,
+  targetSat: 0.7, currentSat: 0.7,
+  targetLight: 0.5, currentLight: 0.5,
+  beatPulse: 0,
+  lastBass: 0,
+};
+
+function lerpHue(a, b, t) {
+  let d = b - a;
+  if (d > 180) d -= 360;
+  else if (d < -180) d += 360;
+  return (a + d * t + 360) % 360;
+}
+
+function updateMood(audio) {
+  // 滚动平均（慢速，约3秒窗口，决定整体氛围）
+  mood.bassAvg = mood.bassAvg * 0.97 + audio.bass * 0.03;
+  mood.midAvg = mood.midAvg * 0.97 + audio.mid * 0.03;
+  mood.trebleAvg = mood.trebleAvg * 0.97 + audio.treble * 0.03;
+  mood.energy = mood.energy * 0.97 + ((audio.bass + audio.mid + audio.treble) / 3) * 0.03;
+
+  // 节拍检测（快速跳动）
+  const bassDelta = audio.bass - mood.lastBass;
+  if (bassDelta > 0.12) mood.beatPulse = Math.min(1, mood.beatPulse + bassDelta * 2.5);
+  mood.beatPulse *= 0.90;
+  mood.lastBass = audio.bass;
+
+  // 频谱质心 → 色相
+  const total = mood.bassAvg + mood.midAvg + mood.trebleAvg + 0.001;
+  const bw = mood.bassAvg / total;
+  const mw = mood.midAvg / total;
+  const tw = mood.trebleAvg / total;
+  // 低频 → 暖色(红橙 25), 中频 → 自然(青绿 155), 高频 → 冷色(蓝紫 255)
+  mood.targetHue = bw * 25 + mw * 155 + tw * 255;
+
+  // 能量 → 饱和度/亮度
+  mood.targetSat = 0.5 + mood.energy * 0.5;
+  mood.targetLight = 0.4 + mood.energy * 0.25;
+
+  // 平滑过渡（约2秒完成色相转换）
+  mood.currentHue = lerpHue(mood.currentHue, mood.targetHue, 0.012);
+  mood.currentSat += (mood.targetSat - mood.currentSat) * 0.015;
+  mood.currentLight += (mood.targetLight - mood.currentLight) * 0.015;
+}
+
 // ============ 工具 ============
 const $ = id => document.getElementById(id);
 function hashStr(s) {
@@ -26,22 +79,17 @@ function fmtTime(s) {
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
-function hslColor(h, s, l, a = 1) {
-  return `hsla(${h}, ${s}%, ${l}%, ${a})`;
-}
 
 // ============ Three.js 场景 ============
 let scene, camera, renderer, raycaster, mouse;
-let songOrbs = [];        // 每首歌的 3D 球体
-let bgParticles;          // 背景粒子云
-let bgParticleData;       // 粒子原始数据
-let freqBars;             // 频谱条
-let glowSprite;           // 当前歌曲辉光
+let songOrbs = [];
+let bgParticles;
+let bgParticleData;
+let freqBars;
 
-// 相机控制
 const camCtrl = {
-  azimuth: 0,       // 水平角
-  polar: Math.PI / 2, // 垂直角
+  azimuth: 0,
+  polar: Math.PI / 2,
   distance: 300,
   targetAz: 0,
   targetPolar: Math.PI / 2,
@@ -52,7 +100,7 @@ const camCtrl = {
   autoRotate: 0.0015,
 };
 
-// ============ 初始化 Three.js ============
+// ============ 初始化 ============
 function initThree() {
   const canvas = $('canvas');
   scene = new THREE.Scene();
@@ -68,16 +116,12 @@ function initThree() {
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
-  // 光照
   scene.add(new THREE.AmbientLight(0x404060, 0.5));
   const pl = new THREE.PointLight(0x6080ff, 1, 500);
   pl.position.set(0, 0, 0);
   scene.add(pl);
 
-  // 背景粒子云
   createBgParticles();
-
-  // 频谱环（围绕当前歌曲）
   createFreqBars();
 
   window.addEventListener('resize', onResize);
@@ -97,18 +141,17 @@ function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ============ 背景粒子 ============
+// ============ 背景粒子云（情绪着色器） ============
 function createBgParticles() {
   const count = 800;
   const geo = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
+  const hues = new Float32Array(count);    // 每个粒子的色相偏移
   const sizes = new Float32Array(count);
 
   bgParticleData = [];
 
   for (let i = 0; i < count; i++) {
-    // 球形分布
     const r = 200 + Math.random() * 600;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
@@ -120,12 +163,8 @@ function createBgParticles() {
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
 
-    const hue = 180 + Math.random() * 120;
-    const c = new THREE.Color().setHSL(hue / 360, 0.7, 0.6);
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-
+    // 色相偏移：±0.12（约43度），让粒子在情绪色周围有微妙变化
+    hues[i] = (Math.random() - 0.5) * 0.24;
     sizes[i] = Math.random() * 2 + 0.5;
 
     bgParticleData.push({
@@ -140,7 +179,7 @@ function createBgParticles() {
   }
 
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aHue', new THREE.BufferAttribute(hues, 1));
   geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
   const mat = new THREE.ShaderMaterial({
@@ -149,33 +188,59 @@ function createBgParticles() {
       uBass: { value: 0 },
       uMid: { value: 0 },
       uPixelRatio: { value: renderer.getPixelRatio() },
+      uMoodHue: { value: 220 / 360 },
+      uMoodSat: { value: 0.7 },
+      uMoodLight: { value: 0.5 },
+      uBeatPulse: { value: 0 },
     },
     vertexShader: `
       attribute float size;
-      attribute vec3 color;
+      attribute float aHue;
       varying vec3 vColor;
+      varying float vAlpha;
       uniform float uTime;
       uniform float uBass;
       uniform float uMid;
       uniform float uPixelRatio;
+      uniform float uMoodHue;
+      uniform float uMoodSat;
+      uniform float uMoodLight;
+      uniform float uBeatPulse;
+
+      vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+      }
+
       void main() {
-        vColor = color;
+        // 情绪色相 + 粒子偏移
+        float hue = mod(uMoodHue + aHue, 1.0);
+        // 节拍跳动时饱和度增强
+        float sat = uMoodSat * (0.75 + uBeatPulse * 0.5);
+        // 低频驱动亮度
+        float light = uMoodLight + uBass * 0.18 + uBeatPulse * 0.12;
+        vColor = hsv2rgb(vec3(hue, sat, clamp(light, 0.0, 1.0)));
+        // 距离越远透明度越低
+        vAlpha = 0.5 + uBeatPulse * 0.3;
+
         vec3 pos = position;
         float wave = sin(uTime * 0.5 + position.x * 0.01) * (3.0 + uMid * 20.0);
         pos += normalize(position) * wave * 0.1;
         vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = size * uPixelRatio * (1.0 + uBass * 3.0) * (300.0 / -mv.z);
+        gl_PointSize = size * uPixelRatio * (1.0 + uBass * 3.0 + uBeatPulse * 1.5) * (300.0 / -mv.z);
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: `
       varying vec3 vColor;
+      varying float vAlpha;
       void main() {
         vec2 uv = gl_PointCoord - 0.5;
         float d = length(uv);
         if (d > 0.5) discard;
         float alpha = smoothstep(0.5, 0.0, d);
-        gl_FragColor = vec4(vColor, alpha * 0.8);
+        gl_FragColor = vec4(vColor, alpha * vAlpha);
       }
     `,
     transparent: true,
@@ -213,7 +278,6 @@ function createSongOrb(track, index) {
   const hue = track.hue;
   const color = new THREE.Color().setHSL(hue / 360, 0.75, 0.55);
 
-  // 主体球
   const geo = new THREE.IcosahedronGeometry(12, 2);
   const mat = new THREE.MeshPhongMaterial({
     color: color,
@@ -225,7 +289,6 @@ function createSongOrb(track, index) {
   });
   const mesh = new THREE.Mesh(geo, mat);
 
-  // 随机 3D 位置
   const r = 80 + Math.random() * 120;
   const theta = Math.random() * Math.PI * 2;
   const phi = Math.acos(2 * Math.random() - 1);
@@ -235,7 +298,6 @@ function createSongOrb(track, index) {
     r * Math.cos(phi)
   );
 
-  // 线框外壳
   const wireGeo = new THREE.IcosahedronGeometry(14, 1);
   const wireMat = new THREE.MeshBasicMaterial({
     color: color,
@@ -246,7 +308,6 @@ function createSongOrb(track, index) {
   const wire = new THREE.Mesh(wireGeo, wireMat);
   mesh.add(wire);
 
-  // 光晕 sprite
   const haloTex = createHaloTexture(color);
   const haloMat = new THREE.SpriteMaterial({
     map: haloTex,
@@ -274,6 +335,7 @@ function createSongOrb(track, index) {
     wire,
     halo,
     baseEmissive: 0.4,
+    haloTex,
   };
 
   scene.add(mesh);
@@ -286,14 +348,14 @@ function createHaloTexture(color) {
   c.width = 128; c.height = 128;
   const cx = c.getContext('2d');
   const grad = cx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  const hsl = `hsla(${Math.round(color.getHSL({}).h * 360)}, 70%, 60%, `;
-  grad.addColorStop(0, hsl + '0.6)');
-  grad.addColorStop(0.4, hsl + '0.2)');
-  grad.addColorStop(1, hsl + '0)');
+  const hsl = color.getHSL({});
+  const hslStr = `hsla(${Math.round(hsl.h * 360)}, 70%, 60%, `;
+  grad.addColorStop(0, hslStr + '0.6)');
+  grad.addColorStop(0.4, hslStr + '0.2)');
+  grad.addColorStop(1, hslStr + '0)');
   cx.fillStyle = grad;
   cx.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(c);
-  return tex;
+  return new THREE.CanvasTexture(c);
 }
 
 // ============ 相机控制 ============
@@ -354,9 +416,7 @@ function onWheel(e) {
 }
 
 function onCanvasClick(e) {
-  // 拖动后不触发 click
   if (Math.abs(e.clientX - camCtrl.lastX) > 5 || Math.abs(e.clientY - camCtrl.lastY) > 5) return;
-
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
@@ -401,15 +461,10 @@ function addFiles(files) {
     const name = f.name.replace(/\.[^.]+$/, '');
     const url = URL.createObjectURL(f);
     const h = hashStr(name);
-    state.playlist.push({
-      name,
-      url,
-      hue: h % 360,
-    });
+    state.playlist.push({ name, url, hue: h % 360 });
   });
   $('drop-zone').classList.add('hidden');
 
-  // 创建 3D 球体
   state.playlist.forEach((t, i) => {
     if (!songOrbs[i]) createSongOrb(t, i);
   });
@@ -498,22 +553,47 @@ function animate() {
 
   const audio = getAudioData();
 
-  // 背景粒子
+  // 情绪更新
+  updateMood(audio);
+
+  // 背景粒子 — 传入情绪 uniforms
   if (bgParticles) {
-    bgParticles.material.uniforms.uTime.value = state.time;
-    bgParticles.material.uniforms.uBass.value = audio.bass;
-    bgParticles.material.uniforms.uMid.value = audio.mid;
+    const u = bgParticles.material.uniforms;
+    u.uTime.value = state.time;
+    u.uBass.value = audio.bass;
+    u.uMid.value = audio.mid;
+    u.uMoodHue.value = mood.currentHue / 360;
+    u.uMoodSat.value = mood.currentSat;
+    u.uMoodLight.value = mood.currentLight;
+    u.uBeatPulse.value = mood.beatPulse;
     bgParticles.rotation.y = state.time * 0.02;
   }
 
-  // 歌曲球体
+  // 雾色跟随情绪
+  const fogColor = new THREE.Color().setHSL(
+    mood.currentHue / 360,
+    Math.min(0.5, mood.currentSat * 0.6),
+    document.body.classList.contains('light') ? 0.75 : 0.04 + mood.currentLight * 0.04
+  );
+  scene.fog.color.copy(fogColor);
+
+  // 歌曲球体 — 颜色随情绪混合
   songOrbs.forEach((orb, i) => {
     const ud = orb.userData;
     const isCurrent = i === state.currentIndex;
     const isPlaying = isCurrent && state.isPlaying;
 
-    // 漂浮运动
     ud.floatPhase += 0.015;
+
+    // 情绪色与歌曲本色混合：当前播放受情绪影响更大
+    const moodInfluence = isCurrent ? 0.55 : 0.25;
+    const blendedHue = lerpHue(ud.hue, mood.currentHue, moodInfluence);
+    const dynSat = mood.currentSat * 0.85 + (isCurrent ? audio.mid * 0.25 : 0);
+    const dynLight = mood.currentLight * 0.85 + (isCurrent ? audio.bass * 0.2 : 0) + mood.beatPulse * 0.1;
+
+    orb.material.color.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.8, dynLight));
+    orb.material.emissive.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.8, dynLight));
+    ud.wire.material.color.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.8, dynLight));
 
     if (isCurrent) {
       // 当前歌曲：吸引到中心
@@ -522,12 +602,10 @@ function animate() {
       ud.vel.z += (0 - orb.position.z) * 0.003;
       ud.vel.multiplyScalar(0.94);
 
-      // 脉动缩放
-      const scale = 1.5 + audio.bass * 2.0 + Math.sin(ud.floatPhase) * 0.1;
+      const scale = 1.5 + audio.bass * 2.0 + mood.beatPulse * 0.5 + Math.sin(ud.floatPhase) * 0.1;
       orb.scale.setScalar(scale);
 
-      // 发光强度
-      orb.material.emissiveIntensity = ud.baseEmissive + audio.mid * 1.5;
+      orb.material.emissiveIntensity = ud.baseEmissive + audio.mid * 1.5 + mood.beatPulse * 0.8;
       ud.wire.material.opacity = 0.3 + audio.treble * 0.5;
       ud.halo.material.opacity = 0.4 + audio.bass * 0.5;
       ud.halo.scale.setScalar(50 + audio.bass * 80);
@@ -547,8 +625,9 @@ function animate() {
           orb.position.z
         );
         bar.lookAt(camera.position);
-        const hue = (ud.hue + bi * 3) % 360;
-        bar.material.color.setHSL(hue / 360, 0.8, 0.5 + v * 0.3);
+        // 频谱条颜色也跟随情绪
+        const barHue = lerpHue(mood.currentHue, (mood.currentHue + bi * 5) % 360, 0.3);
+        bar.material.color.setHSL(barHue / 360, 0.8, 0.5 + v * 0.3);
         bar.material.opacity = 0.4 + v * 0.5;
       });
     } else {
@@ -569,22 +648,18 @@ function animate() {
         }
       }
 
-      // 向原点微弱回拉
       ud.vel.x += (ud.basePos.x - orb.position.x) * 0.0005;
       ud.vel.y += (ud.basePos.y - orb.position.y) * 0.0005;
       ud.vel.z += (ud.basePos.z - orb.position.z) * 0.0005;
       ud.vel.multiplyScalar(0.98);
 
-      // 音频微反应
-      const scale = 1 + audio.bass * 0.3;
+      const scale = 1 + audio.bass * 0.3 + mood.beatPulse * 0.15;
       orb.scale.setScalar(scale);
       orb.material.emissiveIntensity = ud.baseEmissive + audio.bass * 0.2;
       ud.halo.material.opacity = 0.3 + audio.bass * 0.15;
     }
 
     orb.position.add(ud.vel);
-
-    // 自转
     orb.rotation.x += ud.rotSpeed.x;
     orb.rotation.y += ud.rotSpeed.y;
     ud.wire.rotation.x -= ud.rotSpeed.x * 0.5;
@@ -610,11 +685,7 @@ function bindEvents() {
 
   $('btn-theme').addEventListener('click', () => {
     document.body.classList.toggle('light');
-    $('btn-theme').textContent = document.body.classList.contains('light') ? '\u{1F319}' : '\u2600';
-    // 更新雾色
-    if (scene) {
-      scene.fog.color.set(document.body.classList.contains('light') ? 0xd8dde3 : 0x06080c);
-    }
+    $('btn-theme').textContent = document.body.classList.contains('light') ? '\u{1F319}' : '\u2603';
   });
 
   $('file-input').addEventListener('change', e => addFiles([...e.target.files]));

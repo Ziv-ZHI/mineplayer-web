@@ -1,22 +1,28 @@
-# MinePlayer Web
+# 知非的音乐厅
 
-网页版音乐播放器，还原 [MinePlayer](https://github.com/QingJ01/MinePlayer) 的核心体验。
+3D 沉浸式网页音乐播放器，灵感来源于 [MinePlayer](https://github.com/QingJ01/MinePlayer)。
 
 ## 功能
 
 - 本地音频文件播放（支持拖拽 / 选择）
-- FFT 频谱分析 + 实时粒子可视化
+- **情绪色彩系统** — 实时分析音乐频谱质心，粒子颜色跟随音乐风格动态变换：
+  - 低频厚重（电子/摇滚）→ 暖色（红橙）
+  - 中频柔和（人声/民谣）→ 自然色（青绿）
+  - 高频明亮（古典/轻音乐）→ 冷色（蓝紫）
+  - 节拍跳动 → 饱和度闪烁脉冲
+- 3D 场景（Three.js）：拖拽旋转、滚轮缩放、触摸支持
+- 每首歌 = 3D 空间中的独立粒子球，点击切歌
+- 当前播放球体居中脉动，64 段频谱环围绕
+- 800 个背景粒子云，颜色随情绪整体流转
 - 播放控制：上一首 / 下一首 / 播放模式（循环 / 随机 / 单曲）
-- 进度条、音量调节
 - 深色 / 浅色主题切换
-- 播放列表管理
 
 ## 技术栈
 
-- HTML5 Audio API
-- Web Audio API（FFT 频谱分析）
-- Canvas 2D（粒子渲染）
-- 纯原生 JS，无依赖
+- Three.js（WebGL 3D 渲染 + 自定义着色器）
+- Web Audio API（FFT 频谱分析 + 情绪检测）
+- HSV 色彩空间实时转换（GLSL 着色器内）
+- 纯原生 JS，无框架依赖
 
 ## 本地运行
 
@@ -34,7 +40,6 @@ https://ziv-zhi.github.io/mineplayer-web/
 ## 致谢
 
 - 原项目：[QingJ01/MinePlayer](https://github.com/QingJ01/MinePlayer)
-- 粒子视觉风格参考：[XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio)
 
 ## License
 

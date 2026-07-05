@@ -363,9 +363,6 @@ function createBgParticles() {
       uMoodSat: { value: 0.7 },
       uMoodLight: { value: 0.5 },
       uBeatPulse: { value: 0 },
-      uOrbPositions: { value: [new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,0)] },
-      uOrbCount: { value: 0 },
-      uOrbAttract: { value: 0 }, // 0-1，收缩时增大
     },
     vertexShader: `
       attribute float size;
@@ -381,9 +378,6 @@ function createBgParticles() {
       uniform float uMoodSat;
       uniform float uMoodLight;
       uniform float uBeatPulse;
-      uniform vec3 uOrbPositions[8];
-      uniform float uOrbCount;
-      uniform float uOrbAttract;
 
       vec3 hsv2rgb(vec3 c) {
         vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
@@ -392,7 +386,6 @@ function createBgParticles() {
       }
 
       void main() {
-        // 情绪色相 + 粒子偏移
         float hue = mod(uMoodHue + aHue, 1.0);
         float sat = uMoodSat * (0.6 + uBeatPulse * 0.5);
         float light = (uMoodLight * 0.6 + aBright * 0.5) + uBass * 0.15 * aBright + uBeatPulse * 0.1;
@@ -402,26 +395,6 @@ function createBgParticles() {
         vec3 pos = position;
         float wave = sin(uTime * 0.5 + position.x * 0.01) * (3.0 + uMid * 20.0);
         pos += normalize(position + vec3(0.001)) * wave * 0.08;
-
-        // 太阳系引力：向最近的歌曲球体聚集
-        if (uOrbAttract > 0.01 && uOrbCount > 0.5) {
-          float minDist = 99999.0;
-          vec3 nearestOrb = vec3(0.0);
-          for (int i = 0; i < 8; i++) {
-            if (float(i) >= uOrbCount) break;
-            float d = distance(pos, uOrbPositions[i]);
-            if (d < minDist) {
-              minDist = d;
-              nearestOrb = uOrbPositions[i];
-            }
-          }
-          // 距离越近吸引越强，但不完全贴上去（保留轨道距离）
-          float attract = uOrbAttract * (1.0 - smoothstep(0.0, 600.0, minDist));
-          vec3 toOrb = nearestOrb - pos;
-          float orbitalDist = 35.0 + mod(minDist, 120.0);
-          vec3 targetPos = nearestOrb - normalize(toOrb) * orbitalDist;
-          pos = mix(pos, targetPos, attract * 0.8);
-        }
 
         vec4 mv = modelViewMatrix * vec4(pos, 1.0);
         gl_PointSize = max(2.0, size * uPixelRatio * (1.0 + uBass * 2.5 + uBeatPulse * 1.2) * (700.0 / -mv.z));
@@ -474,113 +447,162 @@ function createFreqBars() {
   scene.add(freqBars);
 }
 
-// ============ 歌曲球体（行星风格） ============
-function createPlanetTexture(baseColor) {
-  // 程序化生成行星表面纹理：噪声色块 + 条纹
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 256;
-  const cx = c.getContext('2d');
-  const hsl = baseColor.getHSL({});
-  const h = Math.round(hsl.h * 360);
-  // 底色渐变
-  const bgGrad = cx.createLinearGradient(0, 0, 0, 256);
-  bgGrad.addColorStop(0, `hsl(${h}, 60%, 25%)`);
-  bgGrad.addColorStop(0.5, `hsl(${h}, 70%, 45%)`);
-  bgGrad.addColorStop(1, `hsl(${h}, 60%, 20%)`);
-  cx.fillStyle = bgGrad;
-  cx.fillRect(0, 0, 512, 256);
-  // 条纹
-  for (let i = 0; i < 12; i++) {
-    const y = (i / 12) * 256 + Math.random() * 20;
-    const bandH = 8 + Math.random() * 30;
-    const lightness = 30 + Math.random() * 35;
-    cx.fillStyle = `hsla(${h + (Math.random()-0.5)*30}, 60%, ${lightness}%, 0.35)`;
-    cx.fillRect(0, y, 512, bandH);
+// ============ 歌曲球体（粒子音符风格） ============
+// 每首歌 = 一个 ♪ 形状的锐利粒子云，悬浮在 3D 空间
+// 参考 Particula 项目的粒子球 + Codrops 的 ShaderMaterial 方案
+function generateNotePositions(count) {
+  // 生成 ♪ 音符形状的 3D 点云
+  // 音符由三部分组成：符头(椭圆) + 符杆(竖线) + 符尾(弧线)
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const offsets = new Float32Array(count); // 每个粒子在其形状路径上的归一化位置
+
+  const noteScale = 22; // 整体缩放
+
+  for (let i = 0; i < count; i++) {
+    const part = Math.random(); // 决定属于哪部分
+
+    let x, y;
+    if (part < 0.45) {
+      // 符头：倾斜椭圆，中心在原点
+      const angle = Math.random() * Math.PI * 2;
+      const rx = noteScale * 0.42; // X 半轴
+      const ry = noteScale * 0.28; // Y 半轴
+      const tilt = -0.25; // 音符典型的前倾角度
+      x = Math.cos(angle) * rx;
+      y = Math.sin(angle) * ry;
+      // 施加倾斜
+      const xt = x * Math.cos(tilt) - y * Math.sin(tilt);
+      const yt = x * Math.sin(tilt) + y * Math.cos(tilt);
+      x = xt; y = yt - noteScale * 0.05;
+      // 符头内部填充（大半径粒子多、小半径粒子少）
+      const fillFactor = Math.sqrt(Math.random());
+      x *= fillFactor; y *= fillFactor;
+    } else if (part < 0.75) {
+      // 符杆：从椭圆右侧向上延伸的竖线
+      x = noteScale * 0.35 + (Math.random() - 0.5) * noteScale * 0.06;
+      y = noteScale * 0.15 + Math.random() * noteScale * 1.25;
+    } else {
+      // 符尾：从杆顶向右下方弯曲的弧线
+      const t = Math.random();
+      const topX = noteScale * 0.38;
+      const topY = noteScale * 1.38;
+      const ctrlX = noteScale * 0.95;
+      const ctrlY = noteScale * 1.15;
+      const endX = noteScale * 0.85;
+      const endY = noteScale * 0.55;
+      // 二次贝塞尔
+      const u = 1 - t;
+      x = u * u * topX + 2 * u * t * ctrlX + t * t * endX;
+      y = u * u * topY + 2 * u * t * ctrlY + t * t * endY;
+      // 略微扩散
+      x += (Math.random() - 0.5) * noteScale * 0.08;
+      y += (Math.random() - 0.5) * noteScale * 0.06;
+    }
+
+    // Z 轴：薄饼状（正面看是清晰音符，侧面看有体积）
+    const z = (Math.random() - 0.5) * noteScale * 0.4;
+    // 边缘粒子稀疏、中心密集（类高斯分布）
+    const zGauss = Math.exp(-Math.abs(z) / (noteScale * 0.12));
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+
+    // 大小：符头粒子较大（实心感），杆和尾粒子较细
+    if (part < 0.45) {
+      sizes[i] = 1.8 + Math.random() * 3.5 * zGauss;
+    } else {
+      sizes[i] = 1.2 + Math.random() * 2.0 * zGauss;
+    }
+
+    offsets[i] = part;
   }
-  // 噪点色块
-  for (let i = 0; i < 200; i++) {
-    const x = Math.random() * 512;
-    const y = Math.random() * 256;
-    const r = 3 + Math.random() * 25;
-    const l = 20 + Math.random() * 50;
-    cx.fillStyle = `hsla(${h + (Math.random()-0.5)*40}, 65%, ${l}%, ${0.1 + Math.random()*0.25})`;
-    cx.beginPath();
-    cx.arc(x, y, r, 0, Math.PI * 2);
-    cx.fill();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = THREE.RepeatWrapping;
-  return tex;
+
+  return { positions, sizes, offsets };
 }
 
 function createSongOrb(track, index) {
   const hue = track.hue;
-  const color = new THREE.Color().setHSL(hue / 360, 0.75, 0.55);
   const group = new THREE.Group();
+  const particleCount = 800;
 
-  // 行星本体：带程序化纹理的球体
-  const planetTex = createPlanetTexture(color);
-  const geo = new THREE.IcosahedronGeometry(18, 4);
-  const mat = new THREE.MeshPhongMaterial({
-    map: planetTex,
-    color: color,
-    emissive: color,
-    emissiveIntensity: 0.25,
-    shininess: 25,
-    transparent: true,
-    opacity: 0.92,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  group.add(mesh);
+  const { positions, sizes, offsets } = generateNotePositions(particleCount);
 
-  // 大气层光晕：略大的半透明球壳
-  const atmoGeo = new THREE.SphereGeometry(21, 32, 32);
-  const atmoMat = new THREE.MeshBasicMaterial({
-    color: color,
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  // 自定义 ShaderMaterial：锐利星点 + 边缘微光
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uHue: { value: hue / 360 },
+      uSat: { value: 0.8 },
+      uLight: { value: 0.6 },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+      uBeatPulse: { value: 0 },
+      uBass: { value: 0 },
+    },
+    vertexShader: `
+      attribute float size;
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform float uHue;
+      uniform float uSat;
+      uniform float uLight;
+      uniform float uPixelRatio;
+      uniform float uBeatPulse;
+      uniform float uBass;
+
+      vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+      }
+
+      void main() {
+        float sat = uSat * (0.7 + uBeatPulse * 0.4);
+        float light = uLight + uBass * 0.2 + uBeatPulse * 0.15;
+        vColor = hsv2rgb(vec3(uHue, sat, clamp(light, 0.0, 1.0)));
+        vAlpha = 0.75 + uBeatPulse * 0.25;
+
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        float scale = 1.0 + uBass * 1.2 + uBeatPulse * 0.6;
+        gl_PointSize = max(1.5, size * uPixelRatio * scale * (400.0 / -mv.z));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv) * 2.0;
+        if (d > 1.0) discard;
+        // 锐利核心 + 柔光晕（借鉴 Codrops 的菲涅尔思路）
+        float core = smoothstep(0.55, 0.0, d);
+        float glow = smoothstep(1.0, 0.45, d) * 0.35;
+        float alpha = core + glow;
+        alpha = pow(alpha, 0.85);
+        vec3 col = vColor + core * 0.4;
+        gl_FragColor = vec4(col, alpha * vAlpha);
+      }
+    `,
     transparent: true,
-    opacity: 0.12,
     blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
     depthWrite: false,
   });
-  const atmo = new THREE.Mesh(atmoGeo, atmoMat);
-  group.add(atmo);
 
-  // 行星环
-  const ringGeo = new THREE.RingGeometry(26, 38, 64);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: color,
-    transparent: true,
-    opacity: 0.25,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = Math.PI * 0.45 + Math.random() * 0.3;
-  ring.rotation.y = Math.random() * 0.5;
-  group.add(ring);
+  const points = new THREE.Points(geo, mat);
+  group.add(points);
 
-  // 光晕 sprite
-  const haloTex = createHaloTexture(color);
-  const haloMat = new THREE.SpriteMaterial({
-    map: haloTex,
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const halo = new THREE.Sprite(haloMat);
-  halo.scale.set(70, 70, 1);
-  group.add(halo);
-
-  // 隐形 hitbox
-  const hitGeo = new THREE.SphereGeometry(42, 8, 8);
+  // 隐形 hitbox（用于点击检测，覆盖音符视觉范围）
+  const hitGeo = new THREE.SphereGeometry(28, 8, 8);
   const hitMat = new THREE.MeshBasicMaterial({ visible: false });
   const hitbox = new THREE.Mesh(hitGeo, hitMat);
   group.add(hitbox);
 
-  // 定位
+  // 定位：均匀分布在球形空间中
   const r = 120 + Math.random() * 200;
   const theta = Math.random() * Math.PI * 2;
   const phi = Math.acos(2 * Math.random() - 1);
@@ -594,40 +616,20 @@ function createSongOrb(track, index) {
     track,
     index,
     hue,
+    points,
     basePos: group.position.clone(),
     floatPhase: Math.random() * Math.PI * 2,
-    rotSpeed: { x: (Math.random() - 0.5) * 0.008, y: (Math.random() - 0.5) * 0.012 },
+    rotSpeed: { x: (Math.random() - 0.5) * 0.006, y: (Math.random() - 0.5) * 0.010 },
     vel: new THREE.Vector3(
       (Math.random() - 0.5) * 0.15,
       (Math.random() - 0.5) * 0.15,
       (Math.random() - 0.5) * 0.15
     ),
-    mesh,       // 行星本体
-    atmo,       // 大气层
-    ring,       // 行星环
-    halo,
-    haloTex,
-    baseEmissive: 0.25,
   };
 
   scene.add(group);
   songOrbs.push(group);
   return group;
-}
-
-function createHaloTexture(color) {
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 128;
-  const cx = c.getContext('2d');
-  const grad = cx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  const hsl = color.getHSL({});
-  const hslStr = `hsla(${Math.round(hsl.h * 360)}, 70%, 60%, `;
-  grad.addColorStop(0, hslStr + '0.6)');
-  grad.addColorStop(0.4, hslStr + '0.2)');
-  grad.addColorStop(1, hslStr + '0)');
-  cx.fillStyle = grad;
-  cx.fillRect(0, 0, 128, 128);
-  return new THREE.CanvasTexture(c);
 }
 
 // ============ 相机控制 ============
@@ -931,7 +933,7 @@ function animate() {
   // 情绪更新
   updateMood(audio);
 
-  // 背景粒子 — 传入情绪 uniforms + 歌曲球体引力
+  // 背景粒子 — 传入情绪 uniforms
   if (bgParticles) {
     const u = bgParticles.material.uniforms;
     u.uTime.value = state.time;
@@ -941,17 +943,6 @@ function animate() {
     u.uMoodSat.value = mood.currentSat;
     u.uMoodLight.value = mood.currentLight;
     u.uBeatPulse.value = mood.beatPulse;
-
-    // 传入选曲球体位置
-    const orbCount = Math.min(songOrbs.length, 8);
-    u.uOrbCount.value = orbCount;
-    for (let i = 0; i < orbCount; i++) {
-      u.uOrbPositions.value[i].copy(songOrbs[i].position);
-    }
-    // 缩放越远引力越强：距离 350 以下无引力，800 以上满引力
-    const zoomFactor = Math.max(0, Math.min(1, (camCtrl.distance - 350) / 450));
-    u.uOrbAttract.value = zoomFactor;
-
     bgParticles.rotation.y = state.time * 0.02;
   }
 
@@ -971,7 +962,7 @@ function animate() {
     progFill.style.boxShadow = `0 0 12px hsla(${h}, 80%, 60%, 0.6)`;
   }
 
-  // 歌曲球体 — 行星风格渲染
+  // 歌曲粒子音符 — 优雅粒子风格
   songOrbs.forEach((orb, i) => {
     const ud = orb.userData;
     const isCurrent = i === state.currentIndex;
@@ -979,15 +970,20 @@ function animate() {
     ud.floatPhase += 0.015;
 
     // 情绪色与歌曲本色混合
-    const moodInfluence = isCurrent ? 0.55 : 0.25;
+    const moodInfluence = isCurrent ? 0.45 : 0.20;
     const blendedHue = lerpHue(ud.hue, mood.currentHue, moodInfluence);
-    const dynSat = mood.currentSat * 0.85 + (isCurrent ? audio.mid * 0.25 : 0);
-    const dynLight = mood.currentLight * 0.85 + (isCurrent ? audio.bass * 0.2 : 0) + mood.beatPulse * 0.1;
+    const dynSat = mood.currentSat * 0.8 + (isCurrent ? audio.mid * 0.2 : 0);
+    const dynLight = mood.currentLight * 0.8 + (isCurrent ? audio.bass * 0.2 : 0) + mood.beatPulse * 0.1;
 
-    ud.mesh.material.color.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.8, dynLight));
-    ud.mesh.material.emissive.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.6, dynLight * 0.7));
-    ud.atmo.material.color.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.8, dynLight));
-    ud.ring.material.color.setHSL(blendedHue / 360, Math.min(1, dynSat), Math.min(0.8, dynLight));
+    // 更新粒子着色器 uniforms
+    if (ud.points && ud.points.material.uniforms) {
+      const pu = ud.points.material.uniforms;
+      pu.uHue.value = blendedHue / 360;
+      pu.uSat.value = Math.min(1, dynSat);
+      pu.uLight.value = Math.min(0.85, dynLight);
+      pu.uBeatPulse.value = mood.beatPulse;
+      pu.uBass.value = audio.bass;
+    }
 
     if (isCurrent) {
       // 当前歌曲：吸引到中心
@@ -996,18 +992,12 @@ function animate() {
       ud.vel.z += (0 - orb.position.z) * 0.003;
       ud.vel.multiplyScalar(0.94);
 
-      const scale = 1.5 + audio.bass * 1.5 + mood.beatPulse * 0.4 + Math.sin(ud.floatPhase) * 0.08;
+      const scale = 1.3 + audio.bass * 1.2 + mood.beatPulse * 0.3 + Math.sin(ud.floatPhase) * 0.06;
       orb.scale.setScalar(scale);
-
-      ud.mesh.material.emissiveIntensity = ud.baseEmissive + audio.mid * 1.2 + mood.beatPulse * 0.6;
-      ud.atmo.material.opacity = 0.12 + audio.bass * 0.25;
-      ud.ring.material.opacity = 0.25 + audio.treble * 0.4;
-      ud.halo.material.opacity = 0.4 + audio.bass * 0.5;
-      ud.halo.scale.setScalar(70 + audio.bass * 100);
 
       // 频谱环
       freqBars.visible = true;
-      const ringR = 44 * scale;
+      const ringR = 53 * scale;
       freqBars.children.forEach((bar, bi) => {
         const fi = Math.floor((bi / freqBars.children.length) * (audio.freq.length * 0.7));
         const v = audio.freq.length > 0 ? audio.freq[fi] / 255 : 0;
@@ -1047,20 +1037,15 @@ function animate() {
       ud.vel.z += (ud.basePos.z - orb.position.z) * 0.0005;
       ud.vel.multiplyScalar(0.98);
 
-      const scale = 1 + audio.bass * 0.3 + mood.beatPulse * 0.15;
+      const scale = 1 + audio.bass * 0.25 + mood.beatPulse * 0.12;
       orb.scale.setScalar(scale);
-      ud.mesh.material.emissiveIntensity = ud.baseEmissive + audio.bass * 0.15;
-      ud.atmo.material.opacity = 0.10 + audio.bass * 0.08;
-      ud.ring.material.opacity = 0.20 + audio.bass * 0.05;
-      ud.halo.material.opacity = 0.3 + audio.bass * 0.15;
     }
 
     orb.position.add(ud.vel);
-    // 行星自转
-    ud.mesh.rotation.x += ud.rotSpeed.x;
-    ud.mesh.rotation.y += ud.rotSpeed.y;
-    // 行星环慢速反向旋转
-    ud.ring.rotation.z += 0.002;
+    // 音符自转（缓慢优雅）
+    orb.rotation.y += ud.rotSpeed.y;
+    orb.rotation.x += ud.rotSpeed.x * 0.3;
+    orb.rotation.z += ud.rotSpeed.x * 0.2;
   });
 
   renderer.render(scene, camera);
